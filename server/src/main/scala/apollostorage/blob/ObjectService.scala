@@ -5,7 +5,7 @@ import apollostorage.domain.Command.{CommitObject, DeleteObject}
 import apollostorage.persistence.BucketEntity
 import org.apache.pekko.Done
 import org.apache.pekko.actor.typed.scaladsl.AskPattern.*
-import org.apache.pekko.actor.typed.{ActorRef, ActorSystem, Scheduler}
+import org.apache.pekko.actor.typed.{ActorSystem, RecipientRef, Scheduler}
 import org.apache.pekko.stream.scaladsl.Source
 import org.apache.pekko.util.{ByteString, Timeout}
 import org.slf4j.LoggerFactory
@@ -25,7 +25,7 @@ final case class CommitResult(ref: BlobRef, checksums: Checksums, size: Long)
  */
 final class ObjectService(
     blobStore: BlobStore,
-    entityFor: BucketName => Future[ActorRef[BucketEntity.Command]]
+    entityFor: BucketName => RecipientRef[BucketEntity.Command]
 )(using system: ActorSystem[?], timeout: Timeout):
 
   private given ExecutionContext = system.executionContext
@@ -53,33 +53,30 @@ final class ObjectService(
           put.ref,
           Instant.now()
         )
-      entityFor(bucket).flatMap { entity =>
-        entity
-          .askWithStatus[Done](replyTo => BucketEntity.Execute(command, replyTo))
-          .map(_ => CommitResult(put.ref, put.checksums, put.size))
-      }
+      entityFor(bucket)
+        .askWithStatus[Done](replyTo => BucketEntity.Execute(command, replyTo))
+        .map(_ => CommitResult(put.ref, put.checksums, put.size))
     }
 
   /** Persist the deletion, then remove the payload best-effort. */
   def delete(bucket: BucketName, name: ObjectName): Future[Unit] =
-    entityFor(bucket).flatMap { entity =>
-      entity.ask[Option[ObjectEntry]](replyTo => BucketEntity.GetObject(name, replyTo)).flatMap {
-        maybeEntry =>
-          entity
-            .askWithStatus[Done](replyTo =>
-              BucketEntity.Execute(DeleteObject(name, Instant.now()), replyTo)
-            )
-            .flatMap { _ =>
-              maybeEntry match
-                case Some(entry) =>
-                  blobStore.delete(entry.blob).map(_ => ()).recover { case NonFatal(e) =>
-                    log.warn(
-                      "orphaned blob {} — delete after ObjectDeleted failed: {}",
-                      entry.blob,
-                      e.getMessage
-                    )
-                  }
-                case None => Future.unit // Execute would have already failed if absent
-            }
-      }
+    val entity = entityFor(bucket)
+    entity.ask[Option[ObjectEntry]](replyTo => BucketEntity.GetObject(name, replyTo)).flatMap {
+      maybeEntry =>
+        entity
+          .askWithStatus[Done](replyTo =>
+            BucketEntity.Execute(DeleteObject(name, Instant.now()), replyTo)
+          )
+          .flatMap { _ =>
+            maybeEntry match
+              case Some(entry) =>
+                blobStore.delete(entry.blob).map(_ => ()).recover { case NonFatal(e) =>
+                  log.warn(
+                    "orphaned blob {} — delete after ObjectDeleted failed: {}",
+                    entry.blob,
+                    e.getMessage
+                  )
+                }
+              case None => Future.unit // Execute would have already failed if absent
+          }
     }

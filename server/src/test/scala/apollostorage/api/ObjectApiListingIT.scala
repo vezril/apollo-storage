@@ -4,7 +4,7 @@ import apollostorage.blob.{FileSystemBlobStore, ObjectService}
 import apollostorage.config.PostgresConfig
 import apollostorage.domain.BucketName
 import apollostorage.grpc.*
-import apollostorage.persistence.{BucketEntity, BucketEntityManager}
+import apollostorage.persistence.{BucketEntity, BucketSharding}
 import apollostorage.projection.{BucketProjection, ReadModelRepository}
 import com.dimafeng.testcontainers.{ForAllTestContainer, PostgreSQLContainer}
 import com.google.protobuf.ByteString as ProtoBytes
@@ -76,9 +76,10 @@ final class ObjectApiListingIT
       FileSystemBlobStore(java.nio.file.Files.createTempDirectory("apollo-listing-blobs"))(using
         testKit.system
       )
-    val manager = testKit.spawn(BucketEntityManager())
-    val entityFor: BucketName => Future[ActorRef[BucketEntity.Command]] =
-      b => manager.ask(replyTo => BucketEntityManager.GetEntity(b, replyTo))
+    val sharding = apollostorage.ClusterTestSupport.formSingleNode(testKit.system)
+    val entityFor: BucketName => org.apache.pekko.cluster.sharding.typed.scaladsl.EntityRef[
+      BucketEntity.Command
+    ] = b => apollostorage.persistence.BucketSharding.entityRef(sharding, b)
     val impl = new ObjectApiImpl(
       ObjectService(store, entityFor)(using testKit.system, summon),
       store,
@@ -113,7 +114,6 @@ final class ObjectApiListingIT
   private def config(): Config =
     ConfigFactory
       .parseString(s"""
-        pekko.actor.provider = "local"
         pekko.http.server.preview.enable-http2 = on
         pekko.persistence.r2dbc.connection-factory {
           host = "${container.host}"
@@ -123,6 +123,7 @@ final class ObjectApiListingIT
           password = "${container.password}"
         }
       """)
+      .withFallback(apollostorage.ClusterTestSupport.clusterConfig)
       .withFallback(ConfigFactory.parseResources("persistence.conf"))
       .withFallback(ConfigFactory.parseResources("serialization.conf"))
       .withFallback(ConfigFactory.load())

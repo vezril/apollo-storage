@@ -9,16 +9,24 @@ import org.apache.pekko.projection.r2dbc.scaladsl.R2dbcProjection
 import org.apache.pekko.projection.scaladsl.SourceProvider
 import org.apache.pekko.projection.{Projection, ProjectionId}
 
+import scala.collection.immutable
+
 /**
- * Builds the single at-least-once projection over all slices (design D21/D25): `eventsBySlices`
- * from the r2dbc read journal, entity type `bucket` (D26), folding into the read model via
- * [[BucketProjectionHandler]].
+ * Builds the read-model projection(s). A projection covers a slice range of the journal
+ * (`eventsBySlices`, entity type `bucket`, design D26); the runtime distributes N of them across
+ * the cluster via ShardedDaemonProcess (design D30), while tests use the single full-range
+ * convenience.
  */
 object BucketProjection:
 
   val EntityType = "bucket"
 
-  def apply(repo: ReadModelRepository)(using
+  /** Split the 1024 slices into `numberOfInstances` contiguous ranges. */
+  def sliceRanges(numberOfInstances: Int)(using system: ActorSystem[?]): immutable.Seq[Range] =
+    EventSourcedProvider.sliceRanges(system, R2dbcReadJournal.Identifier, numberOfInstances)
+
+  /** A projection over one slice range, folding events into the read model. */
+  def forRange(repo: ReadModelRepository, sliceRange: Range)(using
       system: ActorSystem[?]
   ): Projection[EventEnvelope[Event]] =
     val sourceProvider
@@ -27,13 +35,18 @@ object BucketProjection:
         system,
         R2dbcReadJournal.Identifier,
         EntityType,
-        minSlice = 0,
-        maxSlice = 1023 // default number of slices is 1024
+        sliceRange.min,
+        sliceRange.max
       )
-
     R2dbcProjection.atLeastOnce(
-      projectionId = ProjectionId("bucket-read-model", "0-1023"),
+      projectionId = ProjectionId("bucket-read-model", s"${sliceRange.min}-${sliceRange.max}"),
       settings = None,
       sourceProvider = sourceProvider,
       handler = () => new BucketProjectionHandler(repo)(using system.executionContext)
     )(system)
+
+  /** Single full-range projection (all 1024 slices) — used by tests. */
+  def apply(repo: ReadModelRepository)(using
+      system: ActorSystem[?]
+  ): Projection[EventEnvelope[Event]] =
+    forRange(repo, 0 to 1023)

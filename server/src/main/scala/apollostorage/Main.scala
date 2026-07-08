@@ -4,15 +4,17 @@ import apollostorage.api.{GrpcServer, HealthServiceImpl, ObjectApiImpl}
 import apollostorage.blob.{BlobStoreReadiness, FileSystemBlobStore, ObjectService}
 import apollostorage.build.BuildInfo
 import apollostorage.config.AppConfig
-import apollostorage.domain.BucketName
 import apollostorage.http.{HealthRoutes, HttpServer}
-import apollostorage.persistence.{BucketEntity, BucketEntityManager, PersistenceReadiness}
+import apollostorage.persistence.{BucketSharding, PersistenceReadiness}
 import apollostorage.projection.{BucketProjection, ReadModelRepository}
 import com.typesafe.config.ConfigFactory
-import org.apache.pekko.actor.typed.scaladsl.AskPattern.*
-import org.apache.pekko.projection.ProjectionBehavior
-import org.apache.pekko.actor.typed.{ActorRef, ActorSystem, Scheduler}
+import org.apache.pekko.actor.typed.scaladsl.Behaviors
+import org.apache.pekko.actor.typed.ActorSystem
+import org.apache.pekko.cluster.sharding.typed.scaladsl.ShardedDaemonProcess
 import org.apache.pekko.http.scaladsl.Http.ServerBinding
+import org.apache.pekko.management.cluster.bootstrap.ClusterBootstrap
+import org.apache.pekko.management.scaladsl.PekkoManagement
+import org.apache.pekko.projection.ProjectionBehavior
 import org.apache.pekko.util.Timeout
 import org.slf4j.LoggerFactory
 
@@ -22,12 +24,11 @@ import scala.concurrent.duration.*
 import scala.util.{Failure, Success}
 
 /**
- * Entry point. Constructs the object stack, binds the HTTP health endpoint and the gRPC API (h2c),
- * then runs the blob-store and Postgres readiness checks before reporting ready. Any bind or
- * dependency failure logs the cause and exits non-zero. SIGTERM is handled by Pekko Coordinated
- * Shutdown.
- *
- * The guardian is the [[BucketEntityManager]] (v1 sharding stand-in, design D2).
+ * Entry point. Forms a Pekko cluster (Management + Bootstrap, design D28), hosts bucket entities
+ * via Cluster Sharding (D29), binds the HTTP health endpoint and the gRPC API, and — once Postgres
+ * and the blob store are ready — starts the read-model projection distributed across the cluster
+ * via ShardedDaemonProcess (D30). Any bind or dependency failure exits non-zero; SIGTERM is handled
+ * by Coordinated Shutdown (shard handoff + rebalance, D31).
  */
 object Main:
   private val log = LoggerFactory.getLogger(getClass)
@@ -37,19 +38,21 @@ object Main:
     val http = AppConfig.http(config)
     val blobRoot = AppConfig.blobRoot(config)
     val grpcPort = AppConfig.grpcPort(config)
+    val projectionInstances = config.getInt("apollostorage.projection.instances")
 
-    given system: ActorSystem[BucketEntityManager.Command] =
-      ActorSystem(BucketEntityManager(), "apollostorage", config)
+    given system: ActorSystem[Nothing] =
+      ActorSystem[Nothing](Behaviors.empty[Nothing], "apollostorage", config)
     import system.executionContext
     given Timeout = Timeout(10.seconds)
-    given Scheduler = system.scheduler
 
-    def entityFor(bucket: BucketName): Future[ActorRef[BucketEntity.Command]] =
-      system.ask(replyTo => BucketEntityManager.GetEntity(bucket, replyTo))
+    // Cluster formation and entity hosting.
+    PekkoManagement(system).start()
+    ClusterBootstrap(system).start()
+    val sharding = BucketSharding.init(system)
+    def entityFor(bucket: apollostorage.domain.BucketName) =
+      BucketSharding.entityRef(sharding, bucket)
 
     val readiness = new AtomicBoolean(false)
-
-    // The object stack builds without touching the database.
     val blobStore = FileSystemBlobStore(blobRoot)
     val objectService = ObjectService(blobStore, entityFor)
     val readModel = new ReadModelRepository(AppConfig.postgres(config))
@@ -83,12 +86,9 @@ object Main:
           case Success(_) =>
             PersistenceReadiness.check(AppConfig.postgres(config)).onComplete {
               case Success(_) =>
-                // Start the read-model projection now that Postgres is reachable.
-                system ! BucketEntityManager.RunProjection(
-                  ProjectionBehavior(BucketProjection(readModel))
-                )
+                startProjection(readModel, projectionInstances)
                 readiness.set(true)
-                log.info("Postgres journal + blob store ready — ApolloStorage is UP")
+                log.info("Postgres + blob store ready — ApolloStorage is UP")
               case Failure(ex) =>
                 log.error(s"Postgres journal unreachable after retries — ${ex.getMessage}", ex)
                 system.terminate()
@@ -99,3 +99,15 @@ object Main:
         system.terminate()
         System.exit(1)
     }
+
+  /** Distribute the projection across the cluster: one instance per slice range. */
+  private def startProjection(readModel: ReadModelRepository, instances: Int)(using
+      system: ActorSystem[?]
+  ): Unit =
+    val ranges = BucketProjection.sliceRanges(instances)
+    ShardedDaemonProcess(system).init[ProjectionBehavior.Command](
+      name = "bucket-projection",
+      numberOfInstances = ranges.size,
+      behaviorFactory = i => ProjectionBehavior(BucketProjection.forRange(readModel, ranges(i))),
+      stopMessage = ProjectionBehavior.Stop
+    )

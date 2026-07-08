@@ -15,8 +15,9 @@ import apollostorage.persistence.BucketEntity
 import com.google.protobuf.ByteString as ProtoBytes
 import io.grpc.Status
 import org.apache.pekko.NotUsed
+import org.apache.pekko.Done
 import org.apache.pekko.actor.typed.scaladsl.AskPattern.*
-import org.apache.pekko.actor.typed.{ActorRef, ActorSystem, Scheduler}
+import org.apache.pekko.actor.typed.{ActorSystem, RecipientRef, Scheduler}
 import org.apache.pekko.grpc.GrpcServiceException
 import org.apache.pekko.stream.scaladsl.{Sink, Source}
 import org.apache.pekko.util.{ByteString, Timeout}
@@ -32,7 +33,7 @@ import scala.concurrent.{ExecutionContext, Future}
 final class ObjectApiImpl(
     objectService: ObjectService,
     blobStore: BlobStore,
-    entityFor: BucketName => Future[ActorRef[BucketEntity.Command]],
+    entityFor: BucketName => RecipientRef[BucketEntity.Command],
     readModel: apollostorage.projection.ReadModelRepository
 )(using system: ActorSystem[?], timeout: Timeout)
     extends ObjectApi:
@@ -176,12 +177,12 @@ final class ObjectApiImpl(
   private def objectName(raw: String): Future[ObjectName] =
     ObjectName.from(raw).fold(e => Future.failed(DomainStatus.exceptionFor(e)), Future.successful)
 
-  private def execute(bucket: BucketName, command: apollostorage.domain.Command): Future[Any] =
-    entityFor(bucket).flatMap(_.askWithStatus(replyTo => BucketEntity.Execute(command, replyTo)))
+  private def execute(bucket: BucketName, command: apollostorage.domain.Command): Future[Done] =
+    entityFor(bucket).askWithStatus[Done](replyTo => BucketEntity.Execute(command, replyTo))
 
   private def lookup(bucket: BucketName, name: ObjectName): Future[ObjectEntry] =
     entityFor(bucket)
-      .flatMap(_.ask[Option[ObjectEntry]](replyTo => BucketEntity.GetObject(name, replyTo)))
+      .ask[Option[ObjectEntry]](replyTo => BucketEntity.GetObject(name, replyTo))
       .flatMap {
         case Some(entry) => Future.successful(entry)
         case None => Future.failed(DomainStatus.exceptionFor(DomainError.ObjectNotFound))
