@@ -83,6 +83,97 @@ sbt server/Docker/publishLocal
 Produces a non-root image with an `EXPOSE`d HTTP port and a container
 `HEALTHCHECK` against `/health`.
 
+## Mounting NFS object storage
+
+> **Status:** ApolloStorage v0.1.0 persists only *metadata events* to
+> PostgreSQL. Object **payloads** are designed to live outside the journal on a
+> swappable blob store (design decision D3); the blob backend itself lands in a
+> later change. This section shows how to provision the NFS share the service
+> will write object bytes to, so your homelab storage is wired up ahead of that
+> change. Until then the mount is simply present in the container.
+
+The examples below mount an NFS export from your NAS into the service container
+at `/var/lib/apollostorage/objects`. Replace `192.168.1.10` with your NAS
+address and `:/volume1/apollostorage/objects` with your export path.
+
+### Option A — Compose-managed NFS volume (recommended)
+
+Let Docker mount the export directly as a named volume — nothing needs to be
+mounted on the host first. Add to `docker-compose.yml`:
+
+```yaml
+services:
+  apollostorage:
+    # ...existing config...
+    volumes:
+      - objects:/var/lib/apollostorage/objects
+
+volumes:
+  # ...existing pgdata volume...
+  objects:
+    driver: local
+    driver_opts:
+      type: nfs
+      o: "addr=192.168.1.10,nfsvers=4.1,rw,hard,timeo=600,retrans=2"
+      device: ":/volume1/apollostorage/objects"
+```
+
+`hard` mounts favor data integrity — I/O is retried rather than failing silently
+during a transient NAS outage. Use `soft,timeo=30` instead only if you prefer
+fail-fast behavior over blocking.
+
+### Option B — Bind-mount a path already mounted on the host
+
+If the share is mounted on the Docker host (e.g. via `/etc/fstab`):
+
+```
+# /etc/fstab on the Docker host
+192.168.1.10:/volume1/apollostorage/objects  /mnt/apollo-objects  nfs4  rw,hard,timeo=600  0  0
+```
+
+```yaml
+services:
+  apollostorage:
+    volumes:
+      - /mnt/apollo-objects:/var/lib/apollostorage/objects
+```
+
+### Plain `docker run`
+
+Create the NFS-backed volume once, then attach it:
+
+```bash
+docker volume create --driver local \
+  --opt type=nfs \
+  --opt o=addr=192.168.1.10,nfsvers=4.1,rw,hard,timeo=600 \
+  --opt device=:/volume1/apollostorage/objects \
+  apollo-objects
+
+docker run -d --name apollostorage \
+  -p 8080:8080 \
+  -e POSTGRES_HOST=postgres -e POSTGRES_PASSWORD=... \
+  -v apollo-objects:/var/lib/apollostorage/objects \
+  calvinference/apollostorage:latest
+```
+
+### Permissions
+
+The container runs as a **non-root** user (`uid 1001`, `apollo`), so the export
+must let that user write. Either:
+
+- make the export directory writable by `uid 1001` on the NAS
+  (e.g. `chown -R 1001:1001 /volume1/apollostorage/objects`, or grant group
+  write and give the owning group `gid 1001`); **or**
+- map NFS writes to a writable owner via the export options
+  (`anonuid=1001,anongid=1001` with `all_squash`).
+
+Confirm the mount is writable from inside the running container:
+
+```bash
+docker compose exec apollostorage \
+  sh -c 'id && cd /var/lib/apollostorage/objects && touch .wtest && echo "writable" && rm .wtest'
+```
+
 ## Configuration
 
 All deployment-varying values come from HOCON (`application.conf`) and are
