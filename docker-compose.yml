@@ -37,17 +37,19 @@ services:
       POSTGRES_PASSWORD: apollostorage
     ports:
       - "8080:8080"
-    # Mount your NAS share for object payloads (see README "Mounting NFS object
-    # storage"). Uncomment together with the `objects` volume below.
-    # volumes:
-    #   - objects:/var/lib/apollostorage/objects
+    volumes:
+      # Object payloads. A fresh volume inherits the image's uid-1001 ownership,
+      # so the blob store is writable out of the box.
+      - objects:/var/lib/apollostorage/objects
 
 volumes:
   pgdata:
-  # NFS-backed object storage. Uncomment and set addr/device to your NAS.
-  # objects:
-  #   driver: local
-  #   driver_opts:
-  #     type: nfs
-  #     o: "addr=192.168.1.10,nfsvers=4.1,rw,hard,timeo=600,retrans=2"
-  #     device: ":/volume1/apollostorage/objects"
+  objects:
+    # Default: a local Docker volume. For NFS-backed storage, uncomment the driver
+    # options and set addr/device to your NAS (see README "Mounting NFS object
+    # storage").
+    # driver: local
+    # driver_opts:
+    #   type: nfs
+    #   o: "addr=192.168.1.10,nfsvers=4.1,rw,hard,timeo=600,retrans=2"
+    #   device: ":/volume1/apollostorage/objects"

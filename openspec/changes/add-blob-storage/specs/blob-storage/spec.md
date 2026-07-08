@@ -86,20 +86,23 @@ removed out from under it.
 - **THEN** the failure is logged and the blob is treated as an orphan (no partially
   deleted object that still claims present bytes)
 
-### Requirement: Deterministic, write-once blob layout
+### Requirement: Opaque, immutable blob references
 
-Each `(bucket, object, generation)` SHALL map to a single deterministic `BlobRef`
-path, and each generation's payload SHALL be immutable and write-once. Re-persisting
-the same generation with identical content SHALL be idempotent.
+The store SHALL assign each stored payload an opaque `BlobRef` at write time and
+SHALL never mutate a stored blob's bytes. Reads and deletes SHALL address blobs
+solely by that `BlobRef`, which SHALL NOT require knowledge of the object's
+generation (the aggregate assigns the generation only at commit time, after the
+blob is written).
 
-#### Scenario: Same generation maps to the same reference
-- **WHEN** the `BlobRef` for `(bucket, object, generation)` is derived twice
-- **THEN** both derivations produce the same path
+#### Scenario: Store assigns a usable reference on write
+- **WHEN** a payload is put
+- **THEN** the store returns an opaque `BlobRef` that reads back the same bytes
 
-#### Scenario: Edge case — retry of the same generation is idempotent
-- **GIVEN** a payload already stored for a generation
-- **WHEN** the identical payload for that same generation is put again
-- **THEN** the result addresses the same `BlobRef` and the stored bytes are unchanged
+#### Scenario: Edge case — a new commit writes a distinct blob
+- **GIVEN** an object committed at generation N with a stored blob
+- **WHEN** a new payload is committed for the same object (generation N+1)
+- **THEN** it is stored under a distinct `BlobRef` and the generation-N blob is left
+  intact (superseded, not overwritten)
 
 ### Requirement: Configurable store root with environment override
 

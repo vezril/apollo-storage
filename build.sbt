@@ -113,5 +113,23 @@ lazy val server = (project in file("server"))
           """printf 'GET /health HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3; """ +
           """grep -q '200 OK' <&3"]"""
       )
-    )
+    ),
+    // Create the default blob root owned by the non-root user, as root, before
+    // the USER switch. A fresh Docker volume mounted here inherits this ownership,
+    // and with no mount the directory still exists and is writable — so the blob
+    // readiness probe passes out of the box (blob-storage spec / design D14).
+    dockerCommands := {
+      val cmds = dockerCommands.value
+      val mkBlobRoot = com.typesafe.sbt.packager.docker.Cmd(
+        "RUN",
+        "mkdir -p /var/lib/apollostorage/objects && chown -R 1001:0 /var/lib/apollostorage/objects"
+      )
+      // Insert before the final USER switch (the mainstage non-root user), so the
+      // directory is created as root in the image that actually ships.
+      val userIdx = cmds.lastIndexWhere {
+        case com.typesafe.sbt.packager.docker.Cmd("USER", _*) => true
+        case _ => false
+      }
+      if (userIdx >= 0) cmds.patch(userIdx, Seq(mkBlobRoot), 0) else cmds :+ mkBlobRoot
+    }
   )

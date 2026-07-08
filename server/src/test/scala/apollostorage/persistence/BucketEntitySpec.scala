@@ -55,16 +55,16 @@ final class BucketEntitySpec
     "persist exactly one event and reply success on CreateBucket" in {
       val kit = newKit
       val result =
-        kit.runCommand[StatusReply[Done]](rt => BucketEntity.Command(CreateBucket(bucket, now), rt))
+        kit.runCommand[StatusReply[Done]](rt => BucketEntity.Execute(CreateBucket(bucket, now), rt))
       result.reply.isSuccess shouldBe true
       result.events shouldBe Seq(Event.BucketCreated(bucket, now))
     }
 
     "persist nothing and reply error on a rejected command" in {
       val kit = newKit
-      kit.runCommand[StatusReply[Done]](rt => BucketEntity.Command(CreateBucket(bucket, now), rt))
+      kit.runCommand[StatusReply[Done]](rt => BucketEntity.Execute(CreateBucket(bucket, now), rt))
       val result =
-        kit.runCommand[StatusReply[Done]](rt => BucketEntity.Command(CreateBucket(bucket, now), rt))
+        kit.runCommand[StatusReply[Done]](rt => BucketEntity.Execute(CreateBucket(bucket, now), rt))
       result.reply.isError shouldBe true
       result.reply.getError.getMessage should include("already exists")
       result.events shouldBe empty
@@ -72,12 +72,12 @@ final class BucketEntitySpec
 
     "increment generation across commits" in {
       val kit = newKit
-      kit.runCommand[StatusReply[Done]](rt => BucketEntity.Command(CreateBucket(bucket, now), rt))
+      kit.runCommand[StatusReply[Done]](rt => BucketEntity.Execute(CreateBucket(bucket, now), rt))
       val first = kit.runCommand[StatusReply[Done]](rt =>
-        BucketEntity.Command(CommitObject(obj, meta, sums, blob, now), rt)
+        BucketEntity.Execute(CommitObject(obj, meta, sums, blob, now), rt)
       )
       val second = kit.runCommand[StatusReply[Done]](rt =>
-        BucketEntity.Command(CommitObject(obj, meta, sums, blob, now), rt)
+        BucketEntity.Execute(CommitObject(obj, meta, sums, blob, now), rt)
       )
       first.events.head.asInstanceOf[Event.ObjectCommitted].generation shouldBe Generation.first
       second.events.head

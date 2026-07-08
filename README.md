@@ -85,12 +85,14 @@ Produces a non-root image with an `EXPOSE`d HTTP port and a container
 
 ## Mounting NFS object storage
 
-> **Status:** ApolloStorage v0.1.0 persists only *metadata events* to
-> PostgreSQL. Object **payloads** are designed to live outside the journal on a
-> swappable blob store (design decision D3); the blob backend itself lands in a
-> later change. This section shows how to provision the NFS share the service
-> will write object bytes to, so your homelab storage is wired up ahead of that
-> change. Until then the mount is simply present in the container.
+> **Status:** The blob store that persists object payloads outside the journal
+> (design D3) is implemented and covered by tests: committed payloads are streamed
+> to disk under the blob root with checksum verification and crash-safe atomic
+> writes, and the service verifies the root is writable at startup. The
+> client-facing object API (gRPC upload/download, D7) that *drives* commits is a
+> later change. Orphaned blobs — from superseded versions or a failed delete — are
+> reclaimed by a future reconciliation sweep. Mount your storage at the blob root
+> (`BLOB_STORE_PATH`, default `/var/lib/apollostorage/objects`).
 
 The examples below mount an NFS export from your NAS into the service container
 at `/var/lib/apollostorage/objects`. Replace `192.168.1.10` with your NAS
@@ -183,6 +185,7 @@ overridable by environment variables — no secrets live in the repo or image.
 | ------------------------------------------------------ | ------------------------- | -------------- |
 | `apollostorage.http.host`                              | `HTTP_HOST`               | `0.0.0.0`      |
 | `apollostorage.http.port`                              | `HTTP_PORT`               | `8080`         |
+| `apollostorage.blob.root`                              | `BLOB_STORE_PATH`         | `/var/lib/apollostorage/objects` |
 | `pekko.persistence.r2dbc.connection-factory.host`      | `POSTGRES_HOST`           | `localhost`    |
 | `pekko.persistence.r2dbc.connection-factory.port`      | `POSTGRES_PORT`           | `5432`         |
 | `pekko.persistence.r2dbc.connection-factory.database`  | `POSTGRES_DB`             | `apollostorage`|
