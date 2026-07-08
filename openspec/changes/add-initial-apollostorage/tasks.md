@@ -7,7 +7,7 @@ Before starting: consult `/Users/cference/Code/claude-toolkit` for relevant skil
 ## 1. Project Scaffolding & CI/CD (`project-scaffolding`)
 
 - [x] 1.1 Initialize repo: sbt build with `core` + `server` modules (design D5), Scala 3.3 LTS, scalafmt + scalafix configs, `.gitignore`, sbt-dynver, sbt-native-packager
-- [ ] 1.2 Create `development` branch; configure branch protection on `main` (PR-only, required checks)
+- [x] 1.2 Create `development` branch; configure branch protection on `main` (PR-only, required checks)
 - [ ] 1.3 **Tests first**: PR-verification workflow with a deliberately failing placeholder test → open a draft PR → confirm the check is red and merge is blocked (edge case: failing test blocks merge)
 - [x] 1.4 **Tests first**: introduce a scalafmt violation on a branch with green tests → confirm the format check fails independently (edge case)
 - [x] 1.5 Implement: finalize `ci.yml` (scalafmtCheck, compile, test) triggered on PRs to `development` and `main`
