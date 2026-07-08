@@ -87,8 +87,9 @@ Produces a non-root image with an `EXPOSE`d HTTP port and a container
 
 The service exposes a gRPC API (`apollostorage.grpc.ObjectApi`) on `GRPC_PORT`
 (default `8443`, cleartext HTTP/2) for the bucket and object lifecycle, plus the
-standard `grpc.health.v1.Health` service. HTTP `/health` remains for container
-orchestration.
+standard `grpc.health.v1.Health` service. On the HTTP port, `/health` remains for
+container orchestration and `/metrics` exposes Prometheus metrics (see **Metrics &
+monitoring**).
 
 | RPC | Shape | Purpose |
 | --- | --- | --- |
@@ -123,8 +124,102 @@ grpcurl -plaintext -d '{"bucket":"media","prefix":"photos/","page_size":100}' \
 grpcurl -plaintext -d '{}' localhost:8443 grpc.health.v1.Health/Check
 ```
 
-> **Note:** the API is served over cleartext HTTP/2 (h2c) for the trusted homelab
-> LAN; TLS and authentication are a tracked future change (design D17).
+> **Note:** by default the API is served over cleartext HTTP/2 (h2c) with no
+> authentication — fine for a trusted homelab LAN. To encrypt the transport and
+> require bearer tokens, see **Securing the API** below.
+
+## Securing the API
+
+TLS and token authentication are **opt-in and default off**. When disabled the
+service logs a startup warning so an insecure deployment is never silent. Enabling
+them requires no image rebuild — supply a keystore and secrets at runtime. **Never
+commit keystores or tokens, or bake them into the image.**
+
+**1. Generate a PKCS#12 keystore** (self-signed is fine on a LAN; use your CA or
+[mkcert](https://github.com/FiloSottile/mkcert) for a trusted chain). Include the
+hostname clients dial as a SAN:
+
+```bash
+keytool -genkeypair -alias apollostorage -keyalg RSA -keysize 2048 \
+  -storetype PKCS12 -keystore keystore.p12 -validity 825 \
+  -dname "CN=apollo.lan" -ext "SAN=dns:apollo.lan,ip:192.168.1.20" \
+  -storepass "$KEYSTORE_PASSWORD"
+
+# export the cert for clients to trust
+keytool -exportcert -alias apollostorage -keystore keystore.p12 \
+  -storepass "$KEYSTORE_PASSWORD" -rfc -file apollostorage.crt
+```
+
+**2. Enable TLS + auth** via environment (keystore mounted read-only, secrets from
+your secret store — see the commented block in `docker-compose.yml`):
+
+| Env var | Purpose |
+| --- | --- |
+| `TLS_ENABLED` | `true` to serve HTTP/2 over TLS |
+| `TLS_KEYSTORE_PATH` | path to the mounted PKCS#12 keystore |
+| `TLS_KEYSTORE_PASSWORD` | keystore password (secret) |
+| `AUTH_ENABLED` | `true` to require a bearer token on every object RPC |
+| `AUTH_TOKENS` | comma-separated accepted tokens (secret) |
+
+Misconfiguration fails fast: `AUTH_ENABLED=true` with no `AUTH_TOKENS`, or a missing
+/ wrong-password keystore, aborts startup with a clear error. Tokens are compared in
+constant time. The `grpc.health.v1.Health` service stays **unauthenticated** so
+orchestrators can probe it without a token.
+
+**3. Call the secured API** — trust the cert with `-cacert` and pass the token in an
+`authorization` header:
+
+```bash
+# authenticated bucket creation over TLS
+grpcurl -cacert apollostorage.crt -H 'authorization: Bearer my-secret-token' \
+  -d '{"bucket":"media"}' apollo.lan:8443 apollostorage.grpc.ObjectApi/CreateBucket
+
+# no/invalid token -> Unauthenticated
+grpcurl -cacert apollostorage.crt -d '{"bucket":"media"}' \
+  apollo.lan:8443 apollostorage.grpc.ObjectApi/CreateBucket
+
+# health needs no token
+grpcurl -cacert apollostorage.crt -d '{}' \
+  apollo.lan:8443 grpc.health.v1.Health/Check
+```
+
+## Metrics & monitoring
+
+ApolloStorage exposes Prometheus metrics at **`GET /metrics`** on the HTTP port
+(`8080`), in the standard text exposition format. Collection is **on by default**;
+set `METRICS_ENABLED=false` to disable it (the endpoint then returns `404`). Like
+`/health`, `/metrics` is **unauthenticated** even when the API's TLS/auth are on — it
+carries only operational telemetry, never bucket or object data.
+
+```bash
+curl -s localhost:8080/metrics | grep apollostorage_
+```
+
+Metric families:
+
+| Metric | Type | Labels | Meaning |
+| --- | --- | --- | --- |
+| `apollostorage_grpc_requests_total` | counter | `method`, `status` | gRPC requests by RPC and outcome (`OK`, `NOT_FOUND`, `UNAUTHENTICATED`, …) |
+| `apollostorage_grpc_request_duration_seconds` | histogram | `method` | gRPC request latency |
+| `apollostorage_blob_operations_total` | counter | `operation`, `outcome` | blob put/get/delete by success/failure |
+| `apollostorage_blob_operation_duration_seconds` | histogram | `operation` | blob operation latency (the disk/NFS hot spot) |
+| `apollostorage_blob_bytes_total` | counter | `direction` | bytes read/written by the blob store |
+| `apollostorage_build_info` | gauge | `version` | always `1`; carries the deployed version |
+| `apollostorage_ready` | gauge | — | `1` when ready to serve, else `0` |
+| `jvm_*`, `process_*` | — | — | standard JVM/process metrics |
+
+Label values are drawn only from closed sets (RPC method names, fixed
+operation/outcome/direction values) — bucket and object names are **never** used as
+labels, bounding cardinality and avoiding information leakage.
+
+Point Prometheus (the planned NAS-hosted stack) at the endpoint:
+
+```yaml
+scrape_configs:
+  - job_name: apollostorage
+    static_configs:
+      - targets: ["apollo.lan:8080"]
+```
 
 ## Running a cluster
 
@@ -260,6 +355,12 @@ overridable by environment variables — no secrets live in the repo or image.
 | `apollostorage.http.port`                              | `HTTP_PORT`               | `8080`         |
 | `apollostorage.blob.root`                              | `BLOB_STORE_PATH`         | `/var/lib/apollostorage/objects` |
 | `apollostorage.grpc.port`                              | `GRPC_PORT`               | `8443`         |
+| `apollostorage.tls.enabled`                            | `TLS_ENABLED`             | `false`        |
+| `apollostorage.tls.keystore-path`                      | `TLS_KEYSTORE_PATH`       | _(none)_       |
+| `apollostorage.tls.keystore-password`                  | `TLS_KEYSTORE_PASSWORD`   | _(none)_       |
+| `apollostorage.auth.enabled`                           | `AUTH_ENABLED`            | `false`        |
+| `apollostorage.auth.tokens`                            | `AUTH_TOKENS`             | _(none)_       |
+| `apollostorage.metrics.enabled`                        | `METRICS_ENABLED`         | `true`         |
 | `pekko.persistence.r2dbc.connection-factory.host`      | `POSTGRES_HOST`           | `localhost`    |
 | `pekko.persistence.r2dbc.connection-factory.port`      | `POSTGRES_PORT`           | `5432`         |
 | `pekko.persistence.r2dbc.connection-factory.database`  | `POSTGRES_DB`             | `apollostorage`|
