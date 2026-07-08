@@ -56,7 +56,7 @@ Before starting: consult `/Users/cference/Code/claude-toolkit` for relevant skil
 - [x] 5.1 **Tests first**: workflow-level assertions — publish job skipped on fork PRs; missing `DOCKERHUB_TOKEN` fails before any push (edge cases; verify on a scratch branch)
 - [x] 5.2 Implement `release.yml`: on `v*` semver tag on `main` → test → build → push `X.Y.Z` + `latest`; add immutability guard (fail if `X.Y.Z` already exists on Docker Hub) (edge case)
 - [x] 5.3 Implement `development` publish: on push → test → push `dev` + `dev-<short-sha>`
-- [ ] 5.4 Verify end-to-end: cut `v0.1.0`, pull both tags, confirm same digest; confirm failing-test commit publishes nothing (edge case)
+- [x] 5.4 Verify end-to-end: cut `v0.1.0`, pull both tags, confirm same digest; confirm failing-test commit publishes nothing (edge case)
 - [x] 5.5 Refactor: share build steps between ci/release/dev workflows
 
 ## 6. Documentation (`documentation`)
@@ -65,4 +65,4 @@ Before starting: consult `/Users/cference/Code/claude-toolkit` for relevant skil
 - [x] 6.2 Write `README.md`: description, badges, AI Usage Disclaimer (SDLC agent team + human review), docker compose deployment example (service + Postgres), configuration table (HOCON keys ↔ env vars), run/test instructions
 - [x] 6.3 Verify compose example self-contained: copy snippet to empty dir, `docker compose up`, service reaches healthy (edge case)
 - [x] 6.4 Add MIT `LICENSE` (year/holder), sbt `licenses` setting, README link; confirm GitHub license auto-detection (edge cases)
-- [ ] 6.5 Final pass: run every documented command once more on `development`, then open the release PR to `main`
+- [x] 6.5 Final pass: run every documented command once more on `development`, then open the release PR to `main`
