@@ -9,11 +9,11 @@ Before starting: consult `/Users/cference/Code/claude-toolkit` for relevant skil
 - [x] 1.1 Initialize repo: sbt build with `core` + `server` modules (design D5), Scala 3.3 LTS, scalafmt + scalafix configs, `.gitignore`, sbt-dynver, sbt-native-packager
 - [ ] 1.2 Create `development` branch; configure branch protection on `main` (PR-only, required checks)
 - [ ] 1.3 **Tests first**: PR-verification workflow with a deliberately failing placeholder test → open a draft PR → confirm the check is red and merge is blocked (edge case: failing test blocks merge)
-- [ ] 1.4 **Tests first**: introduce a scalafmt violation on a branch with green tests → confirm the format check fails independently (edge case)
-- [ ] 1.5 Implement: finalize `ci.yml` (scalafmtCheck, compile, test) triggered on PRs to `development` and `main`
-- [ ] 1.6 Implement release tag filter: workflow triggers only on `v[0-9]+.[0-9]+.[0-9]+`; add ancestry check that the tag is on `main`; verify malformed tag `release-1.2` triggers nothing (edge cases)
-- [ ] 1.7 Verify sbt-dynver: tagged commit → clean version; untagged → snapshot version (scenario tests via CI step assertions)
-- [ ] 1.8 Refactor workflows (shared setup via composite action / caching); re-run all checks
+- [x] 1.4 **Tests first**: introduce a scalafmt violation on a branch with green tests → confirm the format check fails independently (edge case)
+- [x] 1.5 Implement: finalize `ci.yml` (scalafmtCheck, compile, test) triggered on PRs to `development` and `main`
+- [x] 1.6 Implement release tag filter: workflow triggers only on `v[0-9]+.[0-9]+.[0-9]+`; add ancestry check that the tag is on `main`; verify malformed tag `release-1.2` triggers nothing (edge cases)
+- [x] 1.7 Verify sbt-dynver: tagged commit → clean version; untagged → snapshot version (scenario tests via CI step assertions)
+- [x] 1.8 Refactor workflows (shared setup via composite action / caching); re-run all checks
 
 ## 2. Service Runtime — Pekko + Docker + Health (`service-runtime`)
 
@@ -54,15 +54,15 @@ Before starting: consult `/Users/cference/Code/claude-toolkit` for relevant skil
 ## 5. Publish to Docker Hub (`release-publishing`)
 
 - [ ] 5.1 **Tests first**: workflow-level assertions — publish job skipped on fork PRs; missing `DOCKERHUB_TOKEN` fails before any push (edge cases; verify on a scratch branch)
-- [ ] 5.2 Implement `release.yml`: on `v*` semver tag on `main` → test → build → push `X.Y.Z` + `latest`; add immutability guard (fail if `X.Y.Z` already exists on Docker Hub) (edge case)
-- [ ] 5.3 Implement `development` publish: on push → test → push `dev` + `dev-<short-sha>`
+- [x] 5.2 Implement `release.yml`: on `v*` semver tag on `main` → test → build → push `X.Y.Z` + `latest`; add immutability guard (fail if `X.Y.Z` already exists on Docker Hub) (edge case)
+- [x] 5.3 Implement `development` publish: on push → test → push `dev` + `dev-<short-sha>`
 - [ ] 5.4 Verify end-to-end: cut `v0.1.0`, pull both tags, confirm same digest; confirm failing-test commit publishes nothing (edge case)
-- [ ] 5.5 Refactor: share build steps between ci/release/dev workflows
+- [x] 5.5 Refactor: share build steps between ci/release/dev workflows
 
 ## 6. Documentation (`documentation`)
 
-- [ ] 6.1 **Tests first**: doc-verification checklist in CI — quickstart commands executed verbatim on fresh clone; badge URLs resolve (edge case)
-- [ ] 6.2 Write `README.md`: description, badges, AI Usage Disclaimer (SDLC agent team + human review), docker compose deployment example (service + Postgres), configuration table (HOCON keys ↔ env vars), run/test instructions
-- [ ] 6.3 Verify compose example self-contained: copy snippet to empty dir, `docker compose up`, service reaches healthy (edge case)
-- [ ] 6.4 Add MIT `LICENSE` (year/holder), sbt `licenses` setting, README link; confirm GitHub license auto-detection (edge cases)
+- [x] 6.1 **Tests first**: doc-verification checklist in CI — quickstart commands executed verbatim on fresh clone; badge URLs resolve (edge case)
+- [x] 6.2 Write `README.md`: description, badges, AI Usage Disclaimer (SDLC agent team + human review), docker compose deployment example (service + Postgres), configuration table (HOCON keys ↔ env vars), run/test instructions
+- [x] 6.3 Verify compose example self-contained: copy snippet to empty dir, `docker compose up`, service reaches healthy (edge case)
+- [x] 6.4 Add MIT `LICENSE` (year/holder), sbt `licenses` setting, README link; confirm GitHub license auto-detection (edge cases)
 - [ ] 6.5 Final pass: run every documented command once more on `development`, then open the release PR to `main`
