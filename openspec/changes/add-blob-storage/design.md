@@ -30,19 +30,24 @@ project log (previous change ended at D8).
 
 ## Decisions
 
-### D9 — Deterministic, hashed blob layout owned by the store
+### D9 — Opaque, store-assigned blob references
 
-The blob store owns the `BlobRef`. A blob's relative path is
-`<bucket>/<h[0:2]>/<h>/<generation>` where `h = sha256hex(objectName)`. The store
-returns this `BlobRef` from `put`; the orchestration then commits it.
-- **Why**: deterministic (idempotent retries land on the same path), fixed-length
-  components (avoids filesystem path/component-length limits that raw 1 KiB object
-  names with many `/` segments could hit), sharded by `h[0:2]` to avoid huge flat
-  directories, and correlatable to `(bucket, object, generation)` for future GC.
-- **Alternatives**: raw `<bucket>/<objectName>/<generation>` (rejected — path
-  length / deep-dir risk, though object names are already traversal-safe);
-  content-addressed by payload hash (rejected for v1 — enables dedup but
-  complicates deletes/refcounting; deferred).
+The blob store owns the `BlobRef` and assigns it at write time as
+`<bucket>/<id[0:2]>/<id>`, where `id` is a fresh random UUID (hex, no dashes). The
+**generation is not part of the path**: the aggregate assigns the generation only
+when it handles `CommitObject`, which happens *after* the blob is written (D12), so
+the reference cannot depend on it. `put` returns the ref (plus byte count and
+checksums); the orchestration then commits it.
+- **Why**: the commit ordering (D12) requires the ref to be known *before* the
+  event, and a random opaque id is knowable the moment the write completes. It is
+  fixed-length (no filesystem path/component-length limits from 1 KiB object names),
+  sharded by `id[0:2]` to avoid huge flat directories, and correlatable to the
+  bucket. The `id → object` mapping lives in the journal (the `ObjectCommitted`
+  event's `BlobRef`), which is enough for a future orphan-reconciliation sweep.
+- **Alternatives**: generation-in-path (rejected — the generation is unknown until
+  the entity commits, which is after the blob is written); content-addressed by
+  payload hash (rejected for v1 — gives dedup and natural idempotency but requires
+  blob refcounting for safe deletes; deferred).
 
 ### D10 — Single-pass streaming checksums, verify-or-record
 
@@ -77,12 +82,14 @@ never a dangling reference.
 - **Why**: an orphan wastes disk (recoverable); a dangling reference is data loss.
 - **Trade-off**: orphans accumulate until a future reconciliation sweep exists.
 
-### D13 — Write-once, idempotent generations
+### D13 — Immutable blobs; each commit writes a fresh blob
 
-Each `(bucket, object, generation)` blob is immutable and write-once. Because the
-path is deterministic (D9), a retried `put` for the same generation re-promotes
-identical content to the same path (idempotent); the entity’s generation counter
-(D2) guarantees a fresh generation for genuinely new content.
+Every `put` writes a new, immutable blob under a fresh opaque ref (D9). A new object
+version (generation) is a new blob; the previous version's blob remains until
+explicitly deleted or reconciled. Deduplicating identical client retries is deferred
+(it needs an idempotency key or content-addressing — D9 alternative); a retried
+commit simply produces a new generation and a new blob, consistent with how
+`BucketEntity` already assigns a fresh generation per `CommitObject` (D2).
 
 ### D14 — Startup readiness probe for the store
 
