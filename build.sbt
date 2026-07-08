@@ -28,9 +28,12 @@ ThisBuild / scalacOptions ++= Seq(
   "-Yretain-trees"
 )
 
-lazy val pekkoVersion = "1.1.3"
-lazy val pekkoHttpVersion = "1.1.0"
-lazy val pekkoR2dbcVersion = "1.0.0"
+// Aligned so pekko-projection (which pulls pekko 1.2.x / r2dbc 1.1.x) does not
+// create a mixed-version classpath (Pekko forbids that).
+lazy val pekkoVersion = "1.2.0"
+lazy val pekkoHttpVersion = "1.2.0"
+lazy val pekkoR2dbcVersion = "1.1.0"
+lazy val pekkoProjectionVersion = "1.1.0"
 lazy val scalaTestVersion = "3.2.19"
 lazy val testcontainersVersion = "0.41.4"
 lazy val logbackVersion = "1.5.12"
@@ -79,6 +82,11 @@ lazy val server = (project in file("server"))
       "org.apache.pekko" %% "pekko-persistence-typed" % pekkoVersion,
       "org.apache.pekko" %% "pekko-serialization-jackson" % pekkoVersion,
       "org.apache.pekko" %% "pekko-persistence-r2dbc" % pekkoR2dbcVersion,
+      // Postgres r2dbc driver (transitive in r2dbc 1.0.0, explicit since 1.1.0).
+      "org.postgresql" % "r2dbc-postgresql" % "1.0.7.RELEASE",
+      // Read-side projections (design D21): fold the journal into query tables.
+      "org.apache.pekko" %% "pekko-projection-r2dbc" % pekkoProjectionVersion,
+      "org.apache.pekko" %% "pekko-projection-eventsourced" % pekkoProjectionVersion,
       // Align pekko-discovery (pulled transitively by pekko-grpc) with pekkoVersion;
       // Pekko forbids mixed artifact versions.
       "org.apache.pekko" %% "pekko-discovery" % pekkoVersion,

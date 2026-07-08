@@ -54,7 +54,11 @@ final class ObjectApiSpec
     val entityFor: BucketName => Future[ActorRef[BucketEntity.Command]] =
       b => manager.ask(replyTo => BucketEntityManager.GetEntity(b, replyTo))
     val objectService = ObjectService(store, entityFor)
-    val impl = new ObjectApiImpl(objectService, store, entityFor)
+    // Listing is covered by ObjectApiListingIT (needs Postgres); unused here.
+    val readModel = new apollostorage.projection.ReadModelRepository(
+      apollostorage.config.PostgresConfig("localhost", 1, "x", "x", "x", 1.second)
+    )(using system.executionContext)
+    val impl = new ObjectApiImpl(objectService, store, entityFor, readModel)
 
     val handler: HttpRequest => Future[HttpResponse] =
       ServiceHandler.concatOrNotFound(ObjectApiHandler.partial(impl))

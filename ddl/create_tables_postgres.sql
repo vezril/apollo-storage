@@ -62,3 +62,53 @@ CREATE TABLE IF NOT EXISTS durable_state (
 
 CREATE INDEX IF NOT EXISTS durable_state_slice_idx
   ON durable_state (slice, entity_type, db_timestamp, revision, persistence_id);
+-- ---------------------------------------------------------------------------
+-- Read side (add-read-projections): Pekko Projection offset store + read model.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS projection_offset_store (
+  projection_name VARCHAR(255) NOT NULL,
+  projection_key VARCHAR(255) NOT NULL,
+  current_offset VARCHAR(255) NOT NULL,
+  manifest VARCHAR(32) NOT NULL,
+  mergeable BOOLEAN NOT NULL,
+  last_updated BIGINT NOT NULL,
+  PRIMARY KEY (projection_name, projection_key)
+);
+
+CREATE TABLE IF NOT EXISTS projection_timestamp_offset_store (
+  slice INT NOT NULL,
+  projection_name VARCHAR(255) NOT NULL,
+  projection_key VARCHAR(255) NOT NULL,
+  persistence_id VARCHAR(255) NOT NULL,
+  seq_nr BIGINT NOT NULL,
+  timestamp_offset timestamp with time zone NOT NULL,
+  timestamp_consumed timestamp with time zone NOT NULL,
+  PRIMARY KEY (slice, projection_name, timestamp_offset, persistence_id, seq_nr)
+);
+
+CREATE TABLE IF NOT EXISTS projection_management (
+  projection_name VARCHAR(255) NOT NULL,
+  projection_key VARCHAR(255) NOT NULL,
+  paused BOOLEAN NOT NULL,
+  last_updated BIGINT NOT NULL,
+  PRIMARY KEY (projection_name, projection_key)
+);
+
+-- Read model: one row per bucket, one row per live object version.
+CREATE TABLE IF NOT EXISTS bucket_index (
+  bucket VARCHAR(63) PRIMARY KEY,
+  created_at timestamp with time zone NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS object_index (
+  bucket VARCHAR(63) NOT NULL,
+  object_key VARCHAR(1024) NOT NULL,
+  generation BIGINT NOT NULL,
+  size_bytes BIGINT NOT NULL,
+  content_type VARCHAR(255) NOT NULL,
+  crc32c VARCHAR(64) NOT NULL,
+  md5 VARCHAR(64) NOT NULL,
+  updated_at timestamp with time zone NOT NULL,
+  PRIMARY KEY (bucket, object_key)
+);

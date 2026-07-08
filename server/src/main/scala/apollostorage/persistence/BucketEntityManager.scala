@@ -3,6 +3,7 @@ package apollostorage.persistence
 import apollostorage.domain.BucketName
 import org.apache.pekko.actor.typed.scaladsl.Behaviors
 import org.apache.pekko.actor.typed.{ActorRef, Behavior}
+import org.apache.pekko.projection.ProjectionBehavior
 
 import scala.collection.mutable
 
@@ -22,15 +23,22 @@ object BucketEntityManager:
       replyTo: ActorRef[ActorRef[BucketEntity.Command]]
   ) extends Command
 
+  /** Spawn the read-model projection as a child (the single-instance run, D25). */
+  final case class RunProjection(projection: Behavior[ProjectionBehavior.Command]) extends Command
+
   def apply(): Behavior[Command] =
     Behaviors.setup { context =>
       val entities = mutable.Map.empty[String, ActorRef[BucketEntity.Command]]
-      Behaviors.receiveMessage { case GetEntity(bucket, replyTo) =>
-        val entity = entities.getOrElseUpdate(
-          bucket.value,
-          context.spawn(BucketEntity(bucket), s"bucket-${bucket.value}")
-        )
-        replyTo ! entity
-        Behaviors.same
+      Behaviors.receiveMessage {
+        case GetEntity(bucket, replyTo) =>
+          val entity = entities.getOrElseUpdate(
+            bucket.value,
+            context.spawn(BucketEntity(bucket), s"bucket-${bucket.value}")
+          )
+          replyTo ! entity
+          Behaviors.same
+        case RunProjection(projection) =>
+          context.spawn(projection, "bucket-projection")
+          Behaviors.same
       }
     }
