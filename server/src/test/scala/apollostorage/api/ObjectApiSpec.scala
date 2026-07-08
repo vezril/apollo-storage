@@ -3,7 +3,7 @@ package apollostorage.api
 import apollostorage.blob.{FileSystemBlobStore, ObjectService}
 import apollostorage.domain.{BucketName, Checksums}
 import apollostorage.grpc.*
-import apollostorage.persistence.{BucketEntity, BucketEntityManager}
+import apollostorage.persistence.BucketEntity
 import com.google.protobuf.ByteString as ProtoBytes
 import com.typesafe.config.ConfigFactory
 import io.grpc.{Status, StatusRuntimeException}
@@ -33,6 +33,7 @@ final class ObjectApiSpec
     extends ScalaTestWithActorTestKit(
       ConfigFactory
         .parseString("pekko.http.server.preview.enable-http2 = on")
+        .withFallback(apollostorage.ClusterTestSupport.clusterConfig)
         .withFallback(
           org.apache.pekko.persistence.testkit.scaladsl.EventSourcedBehaviorTestKit.config
         )
@@ -50,9 +51,10 @@ final class ObjectApiSpec
     super.beforeAll()
     root = Files.createTempDirectory("apollo-api-blobs")
     val store = FileSystemBlobStore(root)
-    val manager = spawn(BucketEntityManager())
-    val entityFor: BucketName => Future[ActorRef[BucketEntity.Command]] =
-      b => manager.ask(replyTo => BucketEntityManager.GetEntity(b, replyTo))
+    val sharding = apollostorage.ClusterTestSupport.formSingleNode(system)
+    val entityFor: BucketName => org.apache.pekko.cluster.sharding.typed.scaladsl.EntityRef[
+      BucketEntity.Command
+    ] = b => apollostorage.persistence.BucketSharding.entityRef(sharding, b)
     val objectService = ObjectService(store, entityFor)
     // Listing is covered by ObjectApiListingIT (needs Postgres); unused here.
     val readModel = new apollostorage.projection.ReadModelRepository(

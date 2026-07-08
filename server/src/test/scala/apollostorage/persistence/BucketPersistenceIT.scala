@@ -168,7 +168,7 @@ final class BucketPersistenceIT
       send(bucket, CreateBucket(bucket, now)).isSuccess shouldBe true
 
       val entity = testKit.spawn(BucketEntity(bucket))
-      val service = ObjectService(blobStore, _ => Future.successful(entity))(using
+      val service = ObjectService(blobStore, _ => entity)(using
         testKit.system,
         summon[Timeout]
       )

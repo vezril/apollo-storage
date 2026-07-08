@@ -36,9 +36,15 @@ services:
       POSTGRES_DB: apollostorage
       POSTGRES_USER: apollostorage
       POSTGRES_PASSWORD: apollostorage
+      # Single-node: forms a cluster of one via self-discovery (see README
+      # "Running a cluster"). For multi-node, set CONTACT_POINT_HOST/CLUSTER_HOST
+      # to the headless service and CLUSTER_MIN_MEMBERS=3.
+      CLUSTER_PORT: "25520"
+      MANAGEMENT_PORT: "8558"
     ports:
       - "8080:8080" # HTTP health
       - "8443:8443" # gRPC object API
+      - "8558:8558" # Pekko management / bootstrap
     volumes:
       # Object payloads. A fresh volume inherits the image's uid-1001 ownership,
       # so the blob store is writable out of the box.
