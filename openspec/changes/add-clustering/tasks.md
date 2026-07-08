@@ -10,7 +10,7 @@ is validated by the deployment smoke.
 
 ## 1. Build & cluster configuration
 
-- [ ] 1.1 Add `pekko-cluster-typed`, `pekko-cluster-sharding-typed`, `pekko-management-cluster-bootstrap`, `pekko-management-cluster-http` deps (aligned versions)
+- [x] 1.1 Add `pekko-cluster-typed`, `pekko-cluster-sharding-typed`, `pekko-management-cluster-bootstrap`, `pekko-management-cluster-http` deps (aligned versions)
 - [ ] 1.2 Base cluster config — `provider = cluster`, Artery remoting (env-overridable bind/host/port), roles, `min-nr-of-members`
 - [ ] 1.3 **Tests first**: config test — split-brain resolver (keep-majority) is the configured downing provider; sharding `number-of-shards` and `ShardedDaemonProcess` instance count resolve from config with env overrides (edge cases, design D27/D30)
 - [ ] 1.4 **Green**: SBR + sharding + management + discovery config with homelab defaults

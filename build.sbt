@@ -34,6 +34,7 @@ lazy val pekkoVersion = "1.2.0"
 lazy val pekkoHttpVersion = "1.2.0"
 lazy val pekkoR2dbcVersion = "1.1.0"
 lazy val pekkoProjectionVersion = "1.1.0"
+lazy val pekkoManagementVersion = "1.2.1"
 lazy val scalaTestVersion = "3.2.19"
 lazy val testcontainersVersion = "0.41.4"
 lazy val logbackVersion = "1.5.12"
@@ -77,6 +78,11 @@ lazy val server = (project in file("server"))
     libraryDependencies ++= Seq(
       "org.apache.pekko" %% "pekko-actor-typed" % pekkoVersion,
       "org.apache.pekko" %% "pekko-stream" % pekkoVersion,
+      // Clustering (design D27-D30): membership, sharded entities, formation.
+      "org.apache.pekko" %% "pekko-cluster-typed" % pekkoVersion,
+      "org.apache.pekko" %% "pekko-cluster-sharding-typed" % pekkoVersion,
+      "org.apache.pekko" %% "pekko-management-cluster-bootstrap" % pekkoManagementVersion,
+      "org.apache.pekko" %% "pekko-management-cluster-http" % pekkoManagementVersion,
       "org.apache.pekko" %% "pekko-http" % pekkoHttpVersion,
       "org.apache.pekko" %% "pekko-http-spray-json" % pekkoHttpVersion,
       "org.apache.pekko" %% "pekko-persistence-typed" % pekkoVersion,
