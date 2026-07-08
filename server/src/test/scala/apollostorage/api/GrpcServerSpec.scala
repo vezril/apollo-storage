@@ -58,7 +58,11 @@ final class GrpcServerSpec
       val manager = spawn(BucketEntityManager())
       val entityFor: BucketName => Future[ActorRef[BucketEntity.Command]] =
         b => manager.ask(replyTo => BucketEntityManager.GetEntity(b, replyTo))
-      val objectApi = new ObjectApiImpl(ObjectService(store, entityFor), store, entityFor)
+      val readModel = new apollostorage.projection.ReadModelRepository(
+        apollostorage.config.PostgresConfig("localhost", 1, "x", "x", "x", 1.second)
+      )(using system.executionContext)
+      val objectApi =
+        new ObjectApiImpl(ObjectService(store, entityFor), store, entityFor, readModel)
       val ready = new AtomicBoolean(true)
 
       val handler = GrpcServer.handler(objectApi, HealthServiceImpl(() => ready.get()))
