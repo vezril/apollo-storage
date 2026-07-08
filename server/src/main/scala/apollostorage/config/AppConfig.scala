@@ -28,6 +28,9 @@ final case class TlsConfig(enabled: Boolean, keystorePath: String, keystorePassw
 /** Bearer-token auth settings (design D35/D39); tokens are secrets. */
 final case class AuthConfig(enabled: Boolean, tokens: Seq[String])
 
+/** Prometheus metrics settings (design D40/D44); on by default, disableable. */
+final case class MetricsConfig(enabled: Boolean)
+
 object AppConfig:
   private val ConnectionFactory = "pekko.persistence.r2dbc.connection-factory"
 
@@ -65,6 +68,9 @@ object AppConfig:
         .filter(_.nonEmpty)
         .toSeq
     )
+
+  def metrics(config: Config): MetricsConfig =
+    MetricsConfig(enabled = config.getBoolean("apollostorage.metrics.enabled"))
 
   def postgres(config: Config): PostgresConfig =
     val cf = config.getConfig(ConnectionFactory)

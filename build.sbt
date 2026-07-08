@@ -38,6 +38,7 @@ lazy val pekkoManagementVersion = "1.2.1"
 lazy val scalaTestVersion = "3.2.19"
 lazy val testcontainersVersion = "0.41.4"
 lazy val logbackVersion = "1.5.12"
+lazy val prometheusVersion = "0.16.0"
 
 // Fork tests so Pekko/JVM system properties and testcontainers behave predictably.
 lazy val commonSettings = Seq(
@@ -92,6 +93,10 @@ lazy val server = (project in file("server"))
       "org.apache.pekko" %% "pekko-persistence-r2dbc" % pekkoR2dbcVersion,
       // Postgres r2dbc driver (transitive in r2dbc 1.0.0, explicit since 1.1.0).
       "org.postgresql" % "r2dbc-postgresql" % "1.0.7.RELEASE",
+      // Prometheus metrics (design D40): app CollectorRegistry, JVM collectors, text exposition.
+      "io.prometheus" % "simpleclient" % prometheusVersion,
+      "io.prometheus" % "simpleclient_hotspot" % prometheusVersion,
+      "io.prometheus" % "simpleclient_common" % prometheusVersion,
       // Read-side projections (design D21): fold the journal into query tables.
       "org.apache.pekko" %% "pekko-projection-r2dbc" % pekkoProjectionVersion,
       "org.apache.pekko" %% "pekko-projection-eventsourced" % pekkoProjectionVersion,

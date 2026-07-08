@@ -1,6 +1,7 @@
 package apollostorage
 
 import apollostorage.api.{
+  GrpcMetrics,
   GrpcServer,
   HealthServiceImpl,
   ObjectApiImpl,
@@ -8,15 +9,17 @@ import apollostorage.api.{
   TlsContext,
   TokenAuthenticator
 }
-import apollostorage.blob.{BlobStoreReadiness, FileSystemBlobStore, ObjectService}
+import apollostorage.blob.{BlobMetrics, BlobStoreReadiness, FileSystemBlobStore, ObjectService}
 import apollostorage.build.BuildInfo
 import apollostorage.config.AppConfig
-import apollostorage.http.{HealthRoutes, HttpServer}
+import apollostorage.http.{HealthRoutes, HttpServer, MetricsRoutes}
+import apollostorage.metrics.MetricsRegistry
 import apollostorage.persistence.{BucketSharding, PersistenceReadiness}
 import apollostorage.projection.{BucketProjection, ReadModelRepository}
 import com.typesafe.config.ConfigFactory
 import org.apache.pekko.actor.typed.scaladsl.Behaviors
 import org.apache.pekko.actor.typed.ActorSystem
+import org.apache.pekko.http.scaladsl.server.Directives.*
 import org.apache.pekko.cluster.sharding.typed.scaladsl.ShardedDaemonProcess
 import org.apache.pekko.http.scaladsl.Http.ServerBinding
 import org.apache.pekko.management.cluster.bootstrap.ClusterBootstrap
@@ -60,7 +63,21 @@ object Main:
       BucketSharding.entityRef(sharding, bucket)
 
     val readiness = new AtomicBoolean(false)
-    val blobStore = FileSystemBlobStore(blobRoot)
+
+    // Metrics (design D40-D44). When enabled, a registry feeds blob/gRPC instrumentation and
+    // the /metrics endpoint; when disabled, nothing is installed (no-op sink, no route).
+    val metricsCfg = AppConfig.metrics(config)
+    val metrics: Option[MetricsRegistry] =
+      if metricsCfg.enabled then Some(new MetricsRegistry(BuildInfo.version, () => readiness.get()))
+      else None
+    val blobMetrics: BlobMetrics = metrics.fold(BlobMetrics.noop)(m =>
+      new BlobMetrics:
+        def observe(operation: String, outcome: String, seconds: Double): Unit =
+          m.observeBlob(operation, outcome, seconds)
+        def addBytes(direction: String, n: Long): Unit = m.addBytes(direction, n)
+    )
+
+    val blobStore = FileSystemBlobStore(blobRoot, blobMetrics)
     val objectService = ObjectService(blobStore, entityFor)
     val readModel = new ReadModelRepository(AppConfig.postgres(config))
 
@@ -74,8 +91,14 @@ object Main:
     val objectApi = ObjectApiImpl(objectService, blobStore, entityFor, readModel, authenticator)
     val health = HealthServiceImpl(() => readiness.get())
 
-    val httpRoutes = HealthRoutes(BuildInfo.version, () => readiness.get())
-    val grpcHandler = GrpcServer.handler(objectApi, health)
+    val healthRoutes = HealthRoutes(BuildInfo.version, () => readiness.get())
+    val httpRoutes = metrics.fold(healthRoutes)(m => healthRoutes ~ MetricsRoutes(m))
+    val grpcHandlerRaw = GrpcServer.handler(objectApi, health)
+    val grpcHandler = metrics.fold(grpcHandlerRaw)(m => GrpcMetrics.instrument(grpcHandlerRaw, m))
+    log.info(
+      "Metrics {} (GET /metrics on the HTTP port)",
+      if metricsCfg.enabled then "ENABLED" else "DISABLED"
+    )
 
     val bindings: Future[(ServerBinding, ServerBinding)] =
       for
