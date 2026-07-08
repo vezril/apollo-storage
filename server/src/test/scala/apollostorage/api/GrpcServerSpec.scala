@@ -4,12 +4,11 @@ import apollostorage.blob.{FileSystemBlobStore, ObjectService}
 import apollostorage.config.AppConfig
 import apollostorage.domain.BucketName
 import apollostorage.grpc.{CreateBucketRequest, ObjectApiClient}
-import apollostorage.persistence.{BucketEntity, BucketEntityManager}
+import apollostorage.persistence.{BucketEntity, BucketSharding}
 import com.typesafe.config.ConfigFactory
 import grpc.health.v1.{HealthCheckRequest, HealthCheckResponse, HealthClient}
 import org.apache.pekko.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
-import org.apache.pekko.actor.typed.ActorRef
-import org.apache.pekko.actor.typed.scaladsl.AskPattern.*
+import org.apache.pekko.cluster.sharding.typed.scaladsl.EntityRef
 import org.apache.pekko.grpc.GrpcClientSettings
 import org.apache.pekko.util.Timeout
 import org.scalatest.matchers.should.Matchers
@@ -17,7 +16,6 @@ import org.scalatest.wordspec.AnyWordSpecLike
 
 import java.nio.file.Files
 import java.util.concurrent.atomic.AtomicBoolean
-import scala.concurrent.Future
 import scala.concurrent.duration.*
 
 /**
@@ -28,6 +26,7 @@ final class GrpcServerSpec
     extends ScalaTestWithActorTestKit(
       ConfigFactory
         .parseString("pekko.http.server.preview.enable-http2 = on")
+        .withFallback(apollostorage.ClusterTestSupport.clusterConfig)
         .withFallback(
           org.apache.pekko.persistence.testkit.scaladsl.EventSourcedBehaviorTestKit.config
         )
@@ -55,9 +54,9 @@ final class GrpcServerSpec
     "bind a port and serve both the object API and health" in {
       val root = Files.createTempDirectory("apollo-grpcserver")
       val store = FileSystemBlobStore(root)
-      val manager = spawn(BucketEntityManager())
-      val entityFor: BucketName => Future[ActorRef[BucketEntity.Command]] =
-        b => manager.ask(replyTo => BucketEntityManager.GetEntity(b, replyTo))
+      val sharding = apollostorage.ClusterTestSupport.formSingleNode(system)
+      val entityFor: BucketName => EntityRef[BucketEntity.Command] =
+        b => BucketSharding.entityRef(sharding, b)
       val readModel = new apollostorage.projection.ReadModelRepository(
         apollostorage.config.PostgresConfig("localhost", 1, "x", "x", "x", 1.second)
       )(using system.executionContext)

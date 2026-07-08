@@ -126,6 +126,36 @@ grpcurl -plaintext -d '{}' localhost:8443 grpc.health.v1.Health/Check
 > **Note:** the API is served over cleartext HTTP/2 (h2c) for the trusted homelab
 > LAN; TLS and authentication are a tracked future change (design D17).
 
+## Running a cluster
+
+ApolloStorage runs as a Pekko cluster (design D27–D33). A single replica forms a
+**cluster of one** automatically (Cluster Bootstrap discovers its own management
+endpoint), so `docker compose up` just works. Bucket entities are **cluster-sharded**
+(one writer per bucket across the cluster) and the read-model projection is
+distributed across nodes via `ShardedDaemonProcess`.
+
+**Ports:** HTTP health (`8080`), gRPC (`8443`), Artery remoting (`CLUSTER_PORT`,
+default `25520`), and Pekko Management/Bootstrap (`MANAGEMENT_PORT`, default `8558`).
+
+**Multi-node:** run ≥3 replicas (keep-majority split-brain quorum) that share one
+PostgreSQL. Each node needs a reachable remoting host and a discovery contact point:
+
+| Env var | Purpose |
+| --- | --- |
+| `CLUSTER_HOST` / `CLUSTER_PORT` | this node's Artery remoting address (peers connect here) |
+| `MANAGEMENT_HOST` / `MANAGEMENT_PORT` | management/bootstrap bind |
+| `CONTACT_POINT_HOST` | the headless service name peers discover each other through |
+| `CLUSTER_MIN_MEMBERS` | gate startup until N members are present (e.g. `3`) |
+| `CLUSTER_NUMBER_OF_SHARDS`, `PROJECTION_INSTANCES` | sharding / projection sizing |
+
+On Kubernetes, set `DISCOVERY_METHOD=kubernetes-api` and run behind a headless
+service; Cluster Bootstrap forms the cluster from the pod set. A rolling restart is
+graceful — Coordinated Shutdown hands off shards and rebalances projection instances
+before a node leaves.
+
+> **Caveat:** the journal + read model are a single shared PostgreSQL. The cluster
+> scales the compute tier, not the database; **PostgreSQL HA is a future change**.
+
 ## Mounting NFS object storage
 
 > **Status:** The blob store that persists object payloads outside the journal
