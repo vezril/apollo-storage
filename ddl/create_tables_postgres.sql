@@ -83,6 +83,7 @@ CREATE TABLE IF NOT EXISTS projection_timestamp_offset_store (
   persistence_id VARCHAR(255) NOT NULL,
   seq_nr BIGINT NOT NULL,
   timestamp_offset timestamp with time zone NOT NULL,
+  timestamp_consumed timestamp with time zone NOT NULL,
   PRIMARY KEY (slice, projection_name, timestamp_offset, persistence_id, seq_nr)
 );
 
