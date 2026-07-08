@@ -21,9 +21,9 @@ Before starting: consult `/Users/cference/Code/claude-toolkit` for relevant skil
 - [x] 2.2 **Green**: implement typed `ActorSystem` guardian, health route, readiness flag wired to Coordinated Shutdown phases
 - [x] 2.3 **Red**: startup test — occupied port ⇒ fast failure, non-zero exit, clear log (edge case)
 - [x] 2.4 **Green**: implement bind-failure handling and exit semantics
-- [ ] 2.5 **Red**: Docker smoke test script/CI job — container reaches `healthy`; runs as non-root; `HTTP_PORT=9090` override honored (edge cases)
-- [ ] 2.6 **Green**: sbt-native-packager Docker config (non-root user, EXPOSE, HEALTHCHECK, env-driven config per design D8)
-- [ ] 2.7 **Refactor**: extract config loading; run full suite + smoke test
+- [x] 2.5 **Red**: Docker smoke test script/CI job — container reaches `healthy`; runs as non-root; `HTTP_PORT=9090` override honored (edge cases)
+- [x] 2.6 **Green**: sbt-native-packager Docker config (non-root user, EXPOSE, HEALTHCHECK, env-driven config per design D8)
+- [x] 2.7 **Refactor**: extract config loading; run full suite + smoke test
 
 ## 3. Domain Model (`domain-model`, pure `core` module)
 
@@ -41,15 +41,15 @@ Before starting: consult `/Users/cference/Code/claude-toolkit` for relevant skil
 
 ## 4. Event Persistence (`event-persistence`, `server` module)
 
-- [ ] 4.1 **Red**: `EventSourcedBehaviorTestKit` suite — `CreateBucket` persists exactly one event + success reply; rejected command persists zero events; persistence ID frozen as `bucket|<name>` (edge cases)
-- [ ] 4.2 **Green**: `BucketEntity` `EventSourcedBehavior` delegating to pure domain transitions
-- [ ] 4.3 **Red**: serialization round-trip suite covering every event constructor (Jackson CBOR, design D4) (edge case)
-- [ ] 4.4 **Green**: serializer bindings + event schema conventions documented in code
-- [ ] 4.5 **Red**: testcontainers integration — events round-trip through real Postgres with correct seqNrs; env vars override HOCON; unreachable DB ⇒ health `DOWN` / bounded-retry exit (edge cases)
-- [ ] 4.6 **Green**: `pekko-persistence-r2dbc` wiring, HOCON config with env overrides, journal schema setup for tests
-- [ ] 4.7 **Red**: recovery suite — restart then commit yields generation 3; deleted bucket stays deleted after replay (edge case)
-- [ ] 4.8 **Green**: verify recovery behavior (should follow from 4.2; fix gaps)
-- [ ] 4.9 **Refactor**: extract persistence config module; run unit + integration suites
+- [x] 4.1 **Red**: `EventSourcedBehaviorTestKit` suite — `CreateBucket` persists exactly one event + success reply; rejected command persists zero events; persistence ID frozen as `bucket|<name>` (edge cases)
+- [x] 4.2 **Green**: `BucketEntity` `EventSourcedBehavior` delegating to pure domain transitions
+- [x] 4.3 **Red**: serialization round-trip suite covering every event constructor (Jackson CBOR, design D4) (edge case)
+- [x] 4.4 **Green**: serializer bindings + event schema conventions documented in code
+- [x] 4.5 **Red**: testcontainers integration — events round-trip through real Postgres with correct seqNrs; env vars override HOCON; unreachable DB ⇒ health `DOWN` / bounded-retry exit (edge cases)
+- [x] 4.6 **Green**: `pekko-persistence-r2dbc` wiring, HOCON config with env overrides, journal schema setup for tests
+- [x] 4.7 **Red**: recovery suite — restart then commit yields generation 3; deleted bucket stays deleted after replay (edge case)
+- [x] 4.8 **Green**: verify recovery behavior (should follow from 4.2; fix gaps)
+- [x] 4.9 **Refactor**: extract persistence config module; run unit + integration suites
 
 ## 5. Publish to Docker Hub (`release-publishing`)
 

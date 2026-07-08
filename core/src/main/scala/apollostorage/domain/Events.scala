@@ -7,7 +7,7 @@ import java.time.Instant
  * purely from an event list requires no external lookup. These are the on-disk journal contract —
  * evolve additively only (design D4).
  */
-sealed trait Event:
+sealed trait Event extends CborSerializable:
   def at: Instant
 
 object Event:

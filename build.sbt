@@ -84,7 +84,9 @@ lazy val server = (project in file("server"))
       "org.apache.pekko" %% "pekko-persistence-testkit" % pekkoVersion % Test,
       "org.scalatest" %% "scalatest" % scalaTestVersion % Test,
       "com.dimafeng" %% "testcontainers-scala-scalatest" % testcontainersVersion % Test,
-      "com.dimafeng" %% "testcontainers-scala-postgresql" % testcontainersVersion % Test
+      "com.dimafeng" %% "testcontainers-scala-postgresql" % testcontainersVersion % Test,
+      // JDBC driver used by tests to apply DDL and assert journal rows.
+      "org.postgresql" % "postgresql" % "42.7.4" % Test
     ),
     // BuildInfo exposes the dynver version to the running app (health endpoint).
     buildInfoKeys := Seq[BuildInfoKey](name, version, scalaVersion, sbtVersion),
@@ -100,15 +102,16 @@ lazy val server = (project in file("server"))
     // Non-root user (packager default UID 1001) + HEALTHCHECK against /health.
     Docker / daemonUserUid := Some("1001"),
     Docker / daemonUser := "apollo",
+    // HEALTHCHECK uses bash's /dev/tcp so no extra packages (wget/curl) are
+    // needed in the JRE base image. Exec form ([...]) keeps the whole script as
+    // a single argument to `bash -c`; bash expands the HTTP_PORT override.
     dockerCommands ++= Seq(
       com.typesafe.sbt.packager.docker.Cmd(
         "HEALTHCHECK",
-        "--interval=10s",
-        "--timeout=3s",
-        "--start-period=20s",
-        "--retries=5",
-        "CMD",
-        "[\"/bin/sh\",\"-c\",\"wget -qO- http://127.0.0.1:${HTTP_PORT:-8080}/health >/dev/null 2>&1 || exit 1\"]"
+        "--interval=10s --timeout=3s --start-period=20s --retries=5 CMD " +
+          """["bash","-c","exec 3<>/dev/tcp/127.0.0.1/${HTTP_PORT:-8080}; """ +
+          """printf 'GET /health HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3; """ +
+          """grep -q '200 OK' <&3"]"""
       )
     )
   )

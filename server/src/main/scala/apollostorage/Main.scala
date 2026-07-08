@@ -3,6 +3,7 @@ package apollostorage
 import apollostorage.build.BuildInfo
 import apollostorage.config.AppConfig
 import apollostorage.http.{HealthRoutes, HttpServer}
+import apollostorage.persistence.PersistenceReadiness
 import com.typesafe.config.ConfigFactory
 import org.apache.pekko.actor.typed.ActorSystem
 import org.apache.pekko.actor.typed.scaladsl.Behaviors
@@ -33,14 +34,24 @@ object Main:
 
     HttpServer.bind(routes, http.host, http.port).onComplete {
       case Success(binding) =>
-        readiness.set(true)
         HttpServer.wireShutdown(binding, readiness)
         log.info(
-          "ApolloStorage {} listening on http://{}:{}/health",
+          "ApolloStorage {} bound http://{}:{}/health; probing Postgres journal…",
           BuildInfo.version,
           http.host,
           Integer.valueOf(binding.localAddress.getPort)
         )
+        // Report ready only after the journal is reachable; exit non-zero if the
+        // database is unavailable after bounded retries (no silent write drops).
+        PersistenceReadiness.check(AppConfig.postgres(config)).onComplete {
+          case Success(_) =>
+            readiness.set(true)
+            log.info("Postgres journal reachable — ApolloStorage is UP")
+          case Failure(ex) =>
+            log.error(s"Postgres journal unreachable after retries — ${ex.getMessage}", ex)
+            system.terminate()
+            System.exit(1)
+        }
       case Failure(ex) =>
         log.error(s"Failed to bind HTTP on ${http.host}:${http.port} — ${ex.getMessage}", ex)
         system.terminate()
