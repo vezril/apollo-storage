@@ -75,6 +75,8 @@ lazy val server = (project in file("server"))
     Compile / mainClass := Some("apollostorage.Main"),
     // Generate both the server powerapi and the client (client used by tests).
     pekkoGrpcGeneratedSources := Seq(PekkoGrpc.Server, PekkoGrpc.Client),
+    // Power APIs expose request metadata to handlers (for bearer-token auth, D35).
+    pekkoGrpcCodeGeneratorSettings += "server_power_apis",
     libraryDependencies ++= Seq(
       "org.apache.pekko" %% "pekko-actor-typed" % pekkoVersion,
       "org.apache.pekko" %% "pekko-stream" % pekkoVersion,

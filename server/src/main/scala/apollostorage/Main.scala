@@ -1,6 +1,13 @@
 package apollostorage
 
-import apollostorage.api.{GrpcServer, HealthServiceImpl, ObjectApiImpl}
+import apollostorage.api.{
+  GrpcServer,
+  HealthServiceImpl,
+  ObjectApiImpl,
+  SecurityWarnings,
+  TlsContext,
+  TokenAuthenticator
+}
 import apollostorage.blob.{BlobStoreReadiness, FileSystemBlobStore, ObjectService}
 import apollostorage.build.BuildInfo
 import apollostorage.config.AppConfig
@@ -56,7 +63,15 @@ object Main:
     val blobStore = FileSystemBlobStore(blobRoot)
     val objectService = ObjectService(blobStore, entityFor)
     val readModel = new ReadModelRepository(AppConfig.postgres(config))
-    val objectApi = ObjectApiImpl(objectService, blobStore, entityFor, readModel)
+
+    // Transport security + authentication (design D34-D39).
+    val tlsCfg = AppConfig.tls(config)
+    val authCfg = AppConfig.auth(config)
+    val authenticator = TokenAuthenticator(authCfg) // fails fast if enabled with no tokens
+    SecurityWarnings.warnings(tlsCfg, authCfg).foreach(w => log.warn(w))
+    val httpsContext = if tlsCfg.enabled then Some(TlsContext.httpsServer(tlsCfg)) else None
+
+    val objectApi = ObjectApiImpl(objectService, blobStore, entityFor, readModel, authenticator)
     val health = HealthServiceImpl(() => readiness.get())
 
     val httpRoutes = HealthRoutes(BuildInfo.version, () => readiness.get())
@@ -65,7 +80,7 @@ object Main:
     val bindings: Future[(ServerBinding, ServerBinding)] =
       for
         httpBinding <- HttpServer.bind(httpRoutes, http.host, http.port)
-        grpcBinding <- GrpcServer.bind(grpcHandler, http.host, grpcPort)
+        grpcBinding <- GrpcServer.bind(grpcHandler, http.host, grpcPort, httpsContext)
       yield (httpBinding, grpcBinding)
 
     bindings.onComplete {

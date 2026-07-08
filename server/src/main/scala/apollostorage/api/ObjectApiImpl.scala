@@ -19,6 +19,7 @@ import org.apache.pekko.Done
 import org.apache.pekko.actor.typed.scaladsl.AskPattern.*
 import org.apache.pekko.actor.typed.{ActorSystem, RecipientRef, Scheduler}
 import org.apache.pekko.grpc.GrpcServiceException
+import org.apache.pekko.grpc.scaladsl.Metadata
 import org.apache.pekko.stream.scaladsl.{Sink, Source}
 import org.apache.pekko.util.{ByteString, Timeout}
 
@@ -26,43 +27,46 @@ import java.time.Instant
 import scala.concurrent.{ExecutionContext, Future}
 
 /**
- * gRPC `ObjectApi` implementation. A thin adapter that validates requests, maps domain failures to
- * gRPC statuses (design D18), and delegates to `ObjectService`, the `BlobStore`, and the bucket
- * entities.
+ * gRPC `ObjectApi` power-API implementation. Each RPC first authenticates the request metadata
+ * (design D35), then delegates to `ObjectService`, the `BlobStore`, and the bucket entities,
+ * mapping domain failures to gRPC statuses (design D18).
  */
 final class ObjectApiImpl(
     objectService: ObjectService,
     blobStore: BlobStore,
     entityFor: BucketName => RecipientRef[BucketEntity.Command],
-    readModel: apollostorage.projection.ReadModelRepository
+    readModel: apollostorage.projection.ReadModelRepository,
+    authenticator: TokenAuthenticator
 )(using system: ActorSystem[?], timeout: Timeout)
-    extends ObjectApi:
+    extends ObjectApiPowerApi:
 
   private given ExecutionContext = system.executionContext
   private given Scheduler = system.scheduler
 
   // --- bucket lifecycle ------------------------------------------------------
 
-  def createBucket(in: CreateBucketRequest): Future[BucketResponse] =
-    bucketName(in.bucket)
-      .flatMap { bucket =>
+  def createBucket(in: CreateBucketRequest, metadata: Metadata): Future[BucketResponse] =
+    guarded(metadata) {
+      bucketName(in.bucket).flatMap { bucket =>
         execute(bucket, CreateBucket(bucket, Instant.now())).map(_ => BucketResponse(bucket.value))
       }
-      .recoverWith(mapFailure)
+    }
 
-  def deleteBucket(in: DeleteBucketRequest): Future[BucketResponse] =
-    bucketName(in.bucket)
-      .flatMap { bucket =>
+  def deleteBucket(in: DeleteBucketRequest, metadata: Metadata): Future[BucketResponse] =
+    guarded(metadata) {
+      bucketName(in.bucket).flatMap { bucket =>
         execute(bucket, DeleteBucket(bucket, Instant.now())).map(_ => BucketResponse(bucket.value))
       }
-      .recoverWith(mapFailure)
+    }
 
   // --- object upload ---------------------------------------------------------
 
-  def putObject(in: Source[PutObjectRequest, NotUsed]): Future[PutObjectResponse] =
-    in.prefixAndTail(1)
-      .runWith(Sink.head)
-      .flatMap { case (prefix, tail) =>
+  def putObject(
+      in: Source[PutObjectRequest, NotUsed],
+      metadata: Metadata
+  ): Future[PutObjectResponse] =
+    guarded(metadata) {
+      in.prefixAndTail(1).runWith(Sink.head).flatMap { case (prefix, tail) =>
         prefix.headOption.map(_.payload) match
           case Some(PutObjectRequest.Payload.Header(header)) =>
             val chunks = tail.map(_.payload).collect { case PutObjectRequest.Payload.Chunk(b) =>
@@ -78,7 +82,6 @@ final class ObjectApiImpl(
                 chunks,
                 expectedChecksums(header)
               )
-              // Re-read the committed entry to report the assigned generation.
               entry <- lookup(bucket, name)
             yield PutObjectResponse(
               generation = entry.generation.value,
@@ -93,66 +96,82 @@ final class ObjectApiImpl(
               )
             )
       }
-      .recoverWith(mapFailure)
+    }
 
   // --- object download & metadata --------------------------------------------
 
-  def getObject(in: GetObjectRequest): Source[GetObjectResponse, NotUsed] =
-    val stream = for
-      bucket <- bucketName(in.bucket)
-      name <- objectName(in.`object`)
-      entry <- lookup(bucket, name)
-      opened <- blobStore.get(entry.blob)
-    yield opened match
-      case None =>
-        Source.failed(
-          new GrpcServiceException(Status.INTERNAL.withDescription("blob missing on disk"))
-        )
-      case Some(bytes) =>
-        val header = GetObjectResponse(
-          GetObjectResponse.Payload.Header(metadataMessage(in.bucket, in.`object`, entry))
-        )
-        Source
-          .single(header)
-          .concat(bytes.map(b => GetObjectResponse(GetObjectResponse.Payload.Chunk(toProto(b)))))
+  def getObject(in: GetObjectRequest, metadata: Metadata): Source[GetObjectResponse, NotUsed] =
+    val stream = Future.unit.flatMap { _ =>
+      authenticator.check(metadata)
+      for
+        bucket <- bucketName(in.bucket)
+        name <- objectName(in.`object`)
+        entry <- lookup(bucket, name)
+        opened <- blobStore.get(entry.blob)
+      yield opened match
+        case None =>
+          Source.failed(
+            new GrpcServiceException(Status.INTERNAL.withDescription("blob missing on disk"))
+          )
+        case Some(bytes) =>
+          val header = GetObjectResponse(
+            GetObjectResponse.Payload.Header(metadataMessage(in.bucket, in.`object`, entry))
+          )
+          Source
+            .single(header)
+            .concat(bytes.map(b => GetObjectResponse(GetObjectResponse.Payload.Chunk(toProto(b)))))
+    }
     Source
       .futureSource(stream.recover { case t => Source.failed(DomainStatus.fromThrowable(t)) })
       .mapMaterializedValue(_ => NotUsed)
 
-  def headObject(in: HeadObjectRequest): Future[ObjectMetadata] =
-    (for
-      bucket <- bucketName(in.bucket)
-      name <- objectName(in.`object`)
-      entry <- lookup(bucket, name)
-    yield metadataMessage(in.bucket, in.`object`, entry)).recoverWith(mapFailure)
+  def headObject(in: HeadObjectRequest, metadata: Metadata): Future[ObjectMetadata] =
+    guarded(metadata) {
+      for
+        bucket <- bucketName(in.bucket)
+        name <- objectName(in.`object`)
+        entry <- lookup(bucket, name)
+      yield metadataMessage(in.bucket, in.`object`, entry)
+    }
 
-  def deleteObject(in: DeleteObjectRequest): Future[DeleteObjectResponse] =
-    (for
-      bucket <- bucketName(in.bucket)
-      name <- objectName(in.`object`)
-      _ <- objectService.delete(bucket, name)
-    yield DeleteObjectResponse(in.bucket, in.`object`)).recoverWith(mapFailure)
+  def deleteObject(in: DeleteObjectRequest, metadata: Metadata): Future[DeleteObjectResponse] =
+    guarded(metadata) {
+      for
+        bucket <- bucketName(in.bucket)
+        name <- objectName(in.`object`)
+        _ <- objectService.delete(bucket, name)
+      yield DeleteObjectResponse(in.bucket, in.`object`)
+    }
 
   // --- listing (read model; eventually consistent) ---------------------------
 
-  def listBuckets(in: ListBucketsRequest): Future[ListBucketsResponse] =
-    readModel
-      .listBuckets(pageSize(in.pageSize), in.pageToken)
-      .map(p => ListBucketsResponse(p.items, p.nextPageToken))
-      .recoverWith(mapFailure)
+  def listBuckets(in: ListBucketsRequest, metadata: Metadata): Future[ListBucketsResponse] =
+    guarded(metadata) {
+      readModel
+        .listBuckets(pageSize(in.pageSize), in.pageToken)
+        .map(p => ListBucketsResponse(p.items, p.nextPageToken))
+    }
 
-  def listObjects(in: ListObjectsRequest): Future[ListObjectsResponse] =
-    bucketName(in.bucket)
-      .flatMap { bucket =>
+  def listObjects(in: ListObjectsRequest, metadata: Metadata): Future[ListObjectsResponse] =
+    guarded(metadata) {
+      bucketName(in.bucket).flatMap { bucket =>
         readModel.bucketExists(bucket.value).flatMap {
           case false => Future.failed(DomainStatus.exceptionFor(DomainError.BucketNotFound))
           case true =>
             readModel
               .listObjects(bucket.value, in.prefix, pageSize(in.pageSize), in.pageToken)
-              .map { page =>
-                ListObjectsResponse(page.items.map(toEntry), page.nextPageToken)
-              }
+              .map(page => ListObjectsResponse(page.items.map(toEntry), page.nextPageToken))
         }
+      }
+    }
+
+  // --- helpers ---------------------------------------------------------------
+
+  /** Authenticate, then run the body; any failure maps to a gRPC status. */
+  private def guarded[A](metadata: Metadata)(body: => Future[A]): Future[A] =
+    Future.unit
+      .flatMap { _ =>
+        authenticator.check(metadata); body
       }
       .recoverWith(mapFailure)
 
@@ -168,8 +187,6 @@ final class ObjectApiImpl(
       crc32C = row.crc32c,
       md5 = row.md5
     )
-
-  // --- helpers ---------------------------------------------------------------
 
   private def bucketName(raw: String): Future[BucketName] =
     BucketName.from(raw).fold(e => Future.failed(DomainStatus.exceptionFor(e)), Future.successful)
