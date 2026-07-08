@@ -2,7 +2,7 @@ package apollostorage.blob
 
 import java.nio.file.{Files, Path}
 import java.util.UUID
-import scala.util.{Failure, Success, Try}
+import scala.util.{Failure, Try}
 import scala.util.control.NonFatal
 
 /**
