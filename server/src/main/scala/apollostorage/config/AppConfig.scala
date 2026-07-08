@@ -38,6 +38,10 @@ object AppConfig:
   def blobRoot(config: Config): Path =
     Path.of(config.getString("apollostorage.blob.root"))
 
+  /** gRPC bind port, env-overridable via `GRPC_PORT` (design D17). */
+  def grpcPort(config: Config): Int =
+    config.getInt("apollostorage.grpc.port")
+
   def postgres(config: Config): PostgresConfig =
     val cf = config.getConfig(ConnectionFactory)
     PostgresConfig(

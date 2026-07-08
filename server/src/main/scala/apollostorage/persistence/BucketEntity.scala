@@ -4,6 +4,7 @@ import apollostorage.domain.{
   BucketDomain,
   BucketName,
   BucketState,
+  DomainException,
   Event,
   ObjectEntry,
   ObjectName,
@@ -55,7 +56,7 @@ object BucketEntity:
           case Right(events) =>
             Effect.persist(events).thenReply(replyTo)(_ => StatusReply.ack())
           case Left(error) =>
-            Effect.reply(replyTo)(StatusReply.error(error.message))
+            Effect.reply(replyTo)(StatusReply.error(DomainException(error)))
 
       case GetObject(name, replyTo) =>
         val entry = state match

@@ -64,11 +64,13 @@ lazy val core = (project in file("core"))
 // --- server: Pekko runtime + persistence. ---------------------------------
 lazy val server = (project in file("server"))
   .dependsOn(core)
-  .enablePlugins(JavaAppPackaging, DockerPlugin, BuildInfoPlugin)
+  .enablePlugins(JavaAppPackaging, DockerPlugin, BuildInfoPlugin, PekkoGrpcPlugin)
   .settings(commonSettings)
   .settings(
     name := "apollostorage-server",
     Compile / mainClass := Some("apollostorage.Main"),
+    // Generate both the server powerapi and the client (client used by tests).
+    pekkoGrpcGeneratedSources := Seq(PekkoGrpc.Server, PekkoGrpc.Client),
     libraryDependencies ++= Seq(
       "org.apache.pekko" %% "pekko-actor-typed" % pekkoVersion,
       "org.apache.pekko" %% "pekko-stream" % pekkoVersion,
@@ -77,6 +79,9 @@ lazy val server = (project in file("server"))
       "org.apache.pekko" %% "pekko-persistence-typed" % pekkoVersion,
       "org.apache.pekko" %% "pekko-serialization-jackson" % pekkoVersion,
       "org.apache.pekko" %% "pekko-persistence-r2dbc" % pekkoR2dbcVersion,
+      // Align pekko-discovery (pulled transitively by pekko-grpc) with pekkoVersion;
+      // Pekko forbids mixed artifact versions.
+      "org.apache.pekko" %% "pekko-discovery" % pekkoVersion,
       "ch.qos.logback" % "logback-classic" % logbackVersion,
       // test
       "org.apache.pekko" %% "pekko-actor-testkit-typed" % pekkoVersion % Test,
@@ -97,8 +102,8 @@ lazy val server = (project in file("server"))
     dockerRepository := sys.env.get("DOCKERHUB_USERNAME"),
     dockerUpdateLatest := false, // release workflow controls :latest explicitly
     Docker / packageName := "apollostorage",
-    dockerExposedPorts := Seq(8080),
-    dockerEnvVars := Map("HTTP_PORT" -> "8080"),
+    dockerExposedPorts := Seq(8080, 8443),
+    dockerEnvVars := Map("HTTP_PORT" -> "8080", "GRPC_PORT" -> "8443"),
     // Non-root user (packager default UID 1001) + HEALTHCHECK against /health.
     Docker / daemonUserUid := Some("1001"),
     Docker / daemonUser := "apollo",
