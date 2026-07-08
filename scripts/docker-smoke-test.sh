@@ -9,7 +9,7 @@ set -euo pipefail
 
 IMAGE="${1:-}"
 if [[ -z "$IMAGE" ]]; then
-  VERSION="$(sbt -batch -error 'print server/version' | tail -n1 | tr -d '[:space:]')"
+  VERSION="$(sbt -Dsbt.log.noformat=true -batch -error 'print server/version' | tail -n1 | perl -pe 's/\e\[[0-9;]*[a-zA-Z]//g' | tr -d '[:space:]')"
   IMAGE="apollostorage:${VERSION}"
 fi
 echo "==> Smoke testing image: $IMAGE"

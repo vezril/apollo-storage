@@ -71,7 +71,7 @@ To run a locally built image instead of the published one:
 
 ```bash
 sbt server/Docker/publishLocal
-APOLLOSTORAGE_IMAGE=apollostorage:$(sbt -batch -error 'print server/version' | tail -n1) docker compose up
+APOLLOSTORAGE_IMAGE=apollostorage:$(sbt -Dsbt.log.noformat=true -batch -error 'print server/version' | tail -n1 | perl -pe 's/\e\[[0-9;]*[a-zA-Z]//g' | tr -d '[:space:]') docker compose up
 ```
 
 ### Build the Docker image

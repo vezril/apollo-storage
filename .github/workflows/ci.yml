@@ -58,7 +58,7 @@ jobs:
       - uses: ./.github/actions/setup-scala
       - name: Assert untagged build is a snapshot
         run: |
-          VERSION=$(sbt -batch -error 'print version' | tail -n1 | tr -d '[:space:]')
+          VERSION=$(sbt -Dsbt.log.noformat=true -batch -error 'print version' | tail -n1 | perl -pe 's/\e\[[0-9;]*[a-zA-Z]//g' | tr -d '[:space:]')
           echo "Derived version: $VERSION"
           case "$VERSION" in
             *SNAPSHOT*|*-*-*) echo "OK: snapshot version" ;;
