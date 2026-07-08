@@ -30,13 +30,15 @@ services:
         condition: service_healthy
     environment:
       HTTP_PORT: "8080"
+      GRPC_PORT: "8443"
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
       POSTGRES_DB: apollostorage
       POSTGRES_USER: apollostorage
       POSTGRES_PASSWORD: apollostorage
     ports:
-      - "8080:8080"
+      - "8080:8080" # HTTP health
+      - "8443:8443" # gRPC object API
     volumes:
       # Object payloads. A fresh volume inherits the image's uid-1001 ownership,
       # so the blob store is writable out of the box.

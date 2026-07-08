@@ -1,5 +1,6 @@
 package apollostorage
 
+import apollostorage.api.{GrpcServer, HealthServiceImpl, ObjectApiImpl}
 import apollostorage.blob.{BlobStoreReadiness, FileSystemBlobStore, ObjectService}
 import apollostorage.build.BuildInfo
 import apollostorage.config.AppConfig
@@ -9,6 +10,7 @@ import apollostorage.persistence.{BucketEntity, BucketEntityManager, Persistence
 import com.typesafe.config.ConfigFactory
 import org.apache.pekko.actor.typed.scaladsl.AskPattern.*
 import org.apache.pekko.actor.typed.{ActorRef, ActorSystem, Scheduler}
+import org.apache.pekko.http.scaladsl.Http.ServerBinding
 import org.apache.pekko.util.Timeout
 import org.slf4j.LoggerFactory
 
@@ -18,12 +20,12 @@ import scala.concurrent.duration.*
 import scala.util.{Failure, Success}
 
 /**
- * Entry point. Binds the HTTP health surface before reporting ready; on bind or dependency failure
- * logs the cause and exits non-zero (service-runtime and blob-storage specs). SIGTERM is handled by
- * Pekko Coordinated Shutdown.
+ * Entry point. Constructs the object stack, binds the HTTP health endpoint and the gRPC API (h2c),
+ * then runs the blob-store and Postgres readiness checks before reporting ready. Any bind or
+ * dependency failure logs the cause and exits non-zero. SIGTERM is handled by Pekko Coordinated
+ * Shutdown.
  *
- * The actor system guardian is the [[BucketEntityManager]], the v1 stand-in for sharding (design
- * D2) that hands out per-bucket entities.
+ * The guardian is the [[BucketEntityManager]] (v1 sharding stand-in, design D2).
  */
 object Main:
   private val log = LoggerFactory.getLogger(getClass)
@@ -32,6 +34,7 @@ object Main:
     val config = ConfigFactory.load()
     val http = AppConfig.http(config)
     val blobRoot = AppConfig.blobRoot(config)
+    val grpcPort = AppConfig.grpcPort(config)
 
     given system: ActorSystem[BucketEntityManager.Command] =
       ActorSystem(BucketEntityManager(), "apollostorage", config)
@@ -43,44 +46,49 @@ object Main:
       system.ask(replyTo => BucketEntityManager.GetEntity(bucket, replyTo))
 
     val readiness = new AtomicBoolean(false)
-    val routes = HealthRoutes(BuildInfo.version, () => readiness.get())
 
-    HttpServer.bind(routes, http.host, http.port).onComplete {
-      case Success(binding) =>
-        HttpServer.wireShutdown(binding, readiness)
+    // The object stack builds without touching the database.
+    val blobStore = FileSystemBlobStore(blobRoot)
+    val objectService = ObjectService(blobStore, entityFor)
+    val objectApi = ObjectApiImpl(objectService, blobStore, entityFor)
+    val health = HealthServiceImpl(() => readiness.get())
+
+    val httpRoutes = HealthRoutes(BuildInfo.version, () => readiness.get())
+    val grpcHandler = GrpcServer.handler(objectApi, health)
+
+    val bindings: Future[(ServerBinding, ServerBinding)] =
+      for
+        httpBinding <- HttpServer.bind(httpRoutes, http.host, http.port)
+        grpcBinding <- GrpcServer.bind(grpcHandler, http.host, grpcPort)
+      yield (httpBinding, grpcBinding)
+
+    bindings.onComplete {
+      case Success((httpBinding, grpcBinding)) =>
+        HttpServer.wireShutdown(httpBinding, readiness)
+        grpcBinding.addToCoordinatedShutdown(10.seconds)
         log.info(
-          "ApolloStorage {} bound http://{}:{}/health; checking dependencies…",
+          "ApolloStorage {} bound HTTP :{} and gRPC :{}; checking dependencies…",
           BuildInfo.version,
-          http.host,
-          Integer.valueOf(binding.localAddress.getPort)
+          Integer.valueOf(httpBinding.localAddress.getPort),
+          Integer.valueOf(grpcBinding.localAddress.getPort)
         )
-        // The blob store must be present and writable before we accept commits.
         BlobStoreReadiness.check(blobRoot) match
           case Failure(ex) =>
             log.error(s"Blob store not ready — ${ex.getMessage}", ex)
             system.terminate()
             System.exit(1)
           case Success(_) =>
-            // Report ready only after the journal is reachable too; exit non-zero
-            // if the database is unavailable after bounded retries.
             PersistenceReadiness.check(AppConfig.postgres(config)).onComplete {
               case Success(_) =>
-                val blobStore = FileSystemBlobStore(blobRoot)
-                // Composition root: constructed and ready for the object API (a
-                // later change); nothing drives it at runtime yet.
-                val _ = ObjectService(blobStore, entityFor)
                 readiness.set(true)
-                log.info(
-                  "Postgres journal + blob store ready — ApolloStorage is UP (blob root {})",
-                  blobRoot
-                )
+                log.info("Postgres journal + blob store ready — ApolloStorage is UP")
               case Failure(ex) =>
                 log.error(s"Postgres journal unreachable after retries — ${ex.getMessage}", ex)
                 system.terminate()
                 System.exit(1)
             }
       case Failure(ex) =>
-        log.error(s"Failed to bind HTTP on ${http.host}:${http.port} — ${ex.getMessage}", ex)
+        log.error(s"Failed to bind (HTTP :${http.port} / gRPC :$grpcPort) — ${ex.getMessage}", ex)
         system.terminate()
         System.exit(1)
     }

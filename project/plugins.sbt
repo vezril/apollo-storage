@@ -12,3 +12,7 @@ addSbtPlugin("ch.epfl.scala" % "sbt-scalafix" % "0.13.0")
 
 // Build-time version info exposed to the app (health endpoint reports version).
 addSbtPlugin("com.eed3si9n" % "sbt-buildinfo" % "0.13.1")
+
+// gRPC object API codegen (object-api spec / design D15). Generates the service
+// and client stubs from src/main/protobuf.
+addSbtPlugin("org.apache.pekko" % "pekko-grpc-sbt-plugin" % "1.1.1")

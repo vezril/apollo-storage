@@ -1,0 +1,83 @@
+syntax = "proto3";
+
+package apollostorage.grpc;
+
+// Client-facing object API (object-api spec, design D7/D16). Payload transfer is
+// streamed with a header-then-chunks framing.
+service ObjectApi {
+  rpc CreateBucket(CreateBucketRequest) returns (BucketResponse);
+  rpc DeleteBucket(DeleteBucketRequest) returns (BucketResponse);
+
+  // First message MUST be `header`; every subsequent message a `chunk`.
+  rpc PutObject(stream PutObjectRequest) returns (PutObjectResponse);
+
+  // Emits a `header` message, then `chunk` messages.
+  rpc GetObject(GetObjectRequest) returns (stream GetObjectResponse);
+
+  rpc HeadObject(HeadObjectRequest) returns (ObjectMetadata);
+  rpc DeleteObject(DeleteObjectRequest) returns (DeleteObjectResponse);
+}
+
+message CreateBucketRequest { string bucket = 1; }
+message DeleteBucketRequest { string bucket = 1; }
+message BucketResponse { string bucket = 1; }
+
+message PutObjectRequest {
+  oneof payload {
+    PutHeader header = 1;
+    bytes chunk = 2;
+  }
+}
+
+message PutHeader {
+  string bucket = 1;
+  string object = 2;
+  string content_type = 3;
+  // Optional expected checksums; empty string means "not provided".
+  string expected_crc32c = 4;
+  string expected_md5 = 5;
+}
+
+message PutObjectResponse {
+  int64 generation = 1;
+  string crc32c = 2;
+  string md5 = 3;
+  int64 size = 4;
+}
+
+message GetObjectRequest {
+  string bucket = 1;
+  string object = 2;
+}
+
+message GetObjectResponse {
+  oneof payload {
+    ObjectMetadata header = 1;
+    bytes chunk = 2;
+  }
+}
+
+message HeadObjectRequest {
+  string bucket = 1;
+  string object = 2;
+}
+
+message ObjectMetadata {
+  string bucket = 1;
+  string object = 2;
+  string content_type = 3;
+  int64 size = 4;
+  string crc32c = 5;
+  string md5 = 6;
+  int64 generation = 7;
+}
+
+message DeleteObjectRequest {
+  string bucket = 1;
+  string object = 2;
+}
+
+message DeleteObjectResponse {
+  string bucket = 1;
+  string object = 2;
+}

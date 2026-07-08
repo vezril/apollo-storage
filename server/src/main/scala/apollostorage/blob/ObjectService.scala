@@ -44,7 +44,15 @@ final class ObjectService(
       expected: Option[Checksums]
   ): Future[CommitResult] =
     blobStore.put(bucket, data, expected).flatMap { put =>
-      val command = CommitObject(name, metadata, put.checksums, put.ref, Instant.now())
+      // The blob store knows the true byte count; record it authoritatively.
+      val command =
+        CommitObject(
+          name,
+          metadata.copy(sizeBytes = put.size),
+          put.checksums,
+          put.ref,
+          Instant.now()
+        )
       entityFor(bucket).flatMap { entity =>
         entity
           .askWithStatus[Done](replyTo => BucketEntity.Execute(command, replyTo))

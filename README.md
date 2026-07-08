@@ -83,6 +83,38 @@ sbt server/Docker/publishLocal
 Produces a non-root image with an `EXPOSE`d HTTP port and a container
 `HEALTHCHECK` against `/health`.
 
+## gRPC object API
+
+The service exposes a gRPC API (`apollostorage.grpc.ObjectApi`) on `GRPC_PORT`
+(default `8443`, cleartext HTTP/2) for the bucket and object lifecycle, plus the
+standard `grpc.health.v1.Health` service. HTTP `/health` remains for container
+orchestration.
+
+| RPC | Shape | Purpose |
+| --- | --- | --- |
+| `CreateBucket` / `DeleteBucket` | unary | bucket lifecycle |
+| `PutObject` | client-streaming (header then chunks) | upload a payload |
+| `GetObject` | server-streaming (header then chunks) | download a payload |
+| `HeadObject` | unary | object metadata only |
+| `DeleteObject` | unary | delete an object |
+
+Domain outcomes map to gRPC status codes (`NOT_FOUND`, `ALREADY_EXISTS`,
+`INVALID_ARGUMENT`, `FAILED_PRECONDITION`). Example with
+[`grpcurl`](https://github.com/fullstorydev/grpcurl) (the service is not on a TLS
+port, so use `-plaintext`):
+
+```bash
+# create a bucket
+grpcurl -plaintext -d '{"bucket":"media"}' \
+  localhost:8443 apollostorage.grpc.ObjectApi/CreateBucket
+
+# health check
+grpcurl -plaintext -d '{}' localhost:8443 grpc.health.v1.Health/Check
+```
+
+> **Note:** the API is served over cleartext HTTP/2 (h2c) for the trusted homelab
+> LAN; TLS and authentication are a tracked future change (design D17).
+
 ## Mounting NFS object storage
 
 > **Status:** The blob store that persists object payloads outside the journal
@@ -186,6 +218,7 @@ overridable by environment variables — no secrets live in the repo or image.
 | `apollostorage.http.host`                              | `HTTP_HOST`               | `0.0.0.0`      |
 | `apollostorage.http.port`                              | `HTTP_PORT`               | `8080`         |
 | `apollostorage.blob.root`                              | `BLOB_STORE_PATH`         | `/var/lib/apollostorage/objects` |
+| `apollostorage.grpc.port`                              | `GRPC_PORT`               | `8443`         |
 | `pekko.persistence.r2dbc.connection-factory.host`      | `POSTGRES_HOST`           | `localhost`    |
 | `pekko.persistence.r2dbc.connection-factory.port`      | `POSTGRES_PORT`           | `5432`         |
 | `pekko.persistence.r2dbc.connection-factory.database`  | `POSTGRES_DB`             | `apollostorage`|
