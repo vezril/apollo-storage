@@ -87,8 +87,9 @@ Produces a non-root image with an `EXPOSE`d HTTP port and a container
 
 The service exposes a gRPC API (`apollostorage.grpc.ObjectApi`) on `GRPC_PORT`
 (default `8443`, cleartext HTTP/2) for the bucket and object lifecycle, plus the
-standard `grpc.health.v1.Health` service. HTTP `/health` remains for container
-orchestration.
+standard `grpc.health.v1.Health` service. On the HTTP port, `/health` remains for
+container orchestration and `/metrics` exposes Prometheus metrics (see **Metrics &
+monitoring**).
 
 | RPC | Shape | Purpose |
 | --- | --- | --- |
@@ -180,6 +181,44 @@ grpcurl -cacert apollostorage.crt -d '{"bucket":"media"}' \
 # health needs no token
 grpcurl -cacert apollostorage.crt -d '{}' \
   apollo.lan:8443 grpc.health.v1.Health/Check
+```
+
+## Metrics & monitoring
+
+ApolloStorage exposes Prometheus metrics at **`GET /metrics`** on the HTTP port
+(`8080`), in the standard text exposition format. Collection is **on by default**;
+set `METRICS_ENABLED=false` to disable it (the endpoint then returns `404`). Like
+`/health`, `/metrics` is **unauthenticated** even when the API's TLS/auth are on — it
+carries only operational telemetry, never bucket or object data.
+
+```bash
+curl -s localhost:8080/metrics | grep apollostorage_
+```
+
+Metric families:
+
+| Metric | Type | Labels | Meaning |
+| --- | --- | --- | --- |
+| `apollostorage_grpc_requests_total` | counter | `method`, `status` | gRPC requests by RPC and outcome (`OK`, `NOT_FOUND`, `UNAUTHENTICATED`, …) |
+| `apollostorage_grpc_request_duration_seconds` | histogram | `method` | gRPC request latency |
+| `apollostorage_blob_operations_total` | counter | `operation`, `outcome` | blob put/get/delete by success/failure |
+| `apollostorage_blob_operation_duration_seconds` | histogram | `operation` | blob operation latency (the disk/NFS hot spot) |
+| `apollostorage_blob_bytes_total` | counter | `direction` | bytes read/written by the blob store |
+| `apollostorage_build_info` | gauge | `version` | always `1`; carries the deployed version |
+| `apollostorage_ready` | gauge | — | `1` when ready to serve, else `0` |
+| `jvm_*`, `process_*` | — | — | standard JVM/process metrics |
+
+Label values are drawn only from closed sets (RPC method names, fixed
+operation/outcome/direction values) — bucket and object names are **never** used as
+labels, bounding cardinality and avoiding information leakage.
+
+Point Prometheus (the planned NAS-hosted stack) at the endpoint:
+
+```yaml
+scrape_configs:
+  - job_name: apollostorage
+    static_configs:
+      - targets: ["apollo.lan:8080"]
 ```
 
 ## Running a cluster
@@ -321,6 +360,7 @@ overridable by environment variables — no secrets live in the repo or image.
 | `apollostorage.tls.keystore-password`                  | `TLS_KEYSTORE_PASSWORD`   | _(none)_       |
 | `apollostorage.auth.enabled`                           | `AUTH_ENABLED`            | `false`        |
 | `apollostorage.auth.tokens`                            | `AUTH_TOKENS`             | _(none)_       |
+| `apollostorage.metrics.enabled`                        | `METRICS_ENABLED`         | `true`         |
 | `pekko.persistence.r2dbc.connection-factory.host`      | `POSTGRES_HOST`           | `localhost`    |
 | `pekko.persistence.r2dbc.connection-factory.port`      | `POSTGRES_PORT`           | `5432`         |
 | `pekko.persistence.r2dbc.connection-factory.database`  | `POSTGRES_DB`             | `apollostorage`|

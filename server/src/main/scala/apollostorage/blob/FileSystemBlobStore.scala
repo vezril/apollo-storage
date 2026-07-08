@@ -19,7 +19,9 @@ import scala.util.control.NonFatal
  * design D11) and blobs are immutable under an opaque, sharded reference `<bucket>/<id[0:2]>/<id>`
  * (design D9).
  */
-final class FileSystemBlobStore(root: Path)(using system: ActorSystem[?]) extends BlobStore:
+final class FileSystemBlobStore(root: Path, metrics: BlobMetrics = BlobMetrics.noop)(using
+    system: ActorSystem[?]
+) extends BlobStore:
   private given ExecutionContext = system.executionContext
 
   def put(
@@ -41,6 +43,7 @@ final class FileSystemBlobStore(root: Path)(using system: ActorSystem[?]) extend
       bs
     }
 
+    val start = System.nanoTime()
     Future(Files.createDirectories(tmp.getParent))
       .flatMap(_ => data.via(digesting).runWith(FileIO.toPath(tmp)))
       .flatMap { io =>
@@ -61,15 +64,45 @@ final class FileSystemBlobStore(root: Path)(using system: ActorSystem[?]) extend
         Files.deleteIfExists(tmp)
         Future.failed(e)
       }
+      .transform { result =>
+        recordOp("put", result, start)
+        result.foreach(r => metrics.addBytes("written", r.size))
+        result
+      }
 
   def get(ref: BlobRef): Future[Option[Source[ByteString, Any]]] =
+    val start = System.nanoTime()
     Future {
       val path = resolve(ref)
-      if Files.isRegularFile(path) then Some(FileIO.fromPath(path)) else None
+      if Files.isRegularFile(path) then Some(countBytesRead(FileIO.fromPath(path))) else None
+    }.transform { result =>
+      recordOp("get", result, start)
+      result
     }
 
   def delete(ref: BlobRef): Future[Boolean] =
-    Future(Files.deleteIfExists(resolve(ref)))
+    val start = System.nanoTime()
+    Future(Files.deleteIfExists(resolve(ref))).transform { result =>
+      recordOp("delete", result, start)
+      result
+    }
+
+  /** Report an operation's outcome + latency to the metrics sink. */
+  private def recordOp(operation: String, result: Try[?], startNanos: Long): Unit =
+    val outcome = if result.isSuccess then "success" else "failure"
+    metrics.observe(operation, outcome, (System.nanoTime() - startNanos) / 1e9)
+
+  /** Wrap a read stream so the bytes it yields are reported once it terminates. */
+  private def countBytesRead(src: Source[ByteString, Any]): Source[ByteString, Any] =
+    val counter = new java.util.concurrent.atomic.AtomicLong(0L)
+    src
+      .map { bs =>
+        counter.addAndGet(bs.length.toLong); bs
+      }
+      .watchTermination() { (mat, done) =>
+        done.onComplete(_ => metrics.addBytes("read", counter.get()))
+        mat
+      }
 
   /** Resolve a reference under the root, refusing any path that escapes it. */
   private def resolve(ref: BlobRef): Path =
