@@ -60,10 +60,16 @@ final class ObjectApiSpec
     val readModel = new apollostorage.projection.ReadModelRepository(
       apollostorage.config.PostgresConfig("localhost", 1, "x", "x", "x", 1.second)
     )(using system.executionContext)
-    val impl = new ObjectApiImpl(objectService, store, entityFor, readModel)
+    val impl = new ObjectApiImpl(
+      objectService,
+      store,
+      entityFor,
+      readModel,
+      TokenAuthenticator(apollostorage.config.AuthConfig(enabled = false, tokens = Nil))
+    )
 
     val handler: HttpRequest => Future[HttpResponse] =
-      ServiceHandler.concatOrNotFound(ObjectApiHandler.partial(impl))
+      GrpcServer.handler(impl, HealthServiceImpl(() => true))
     val binding = Http()(system).newServerAt("127.0.0.1", 0).bind(handler).futureValue
     val port = binding.localAddress.getPort
     client = ObjectApiClient(

@@ -61,11 +61,17 @@ final class GrpcServerSpec
         apollostorage.config.PostgresConfig("localhost", 1, "x", "x", "x", 1.second)
       )(using system.executionContext)
       val objectApi =
-        new ObjectApiImpl(ObjectService(store, entityFor), store, entityFor, readModel)
+        new ObjectApiImpl(
+          ObjectService(store, entityFor),
+          store,
+          entityFor,
+          readModel,
+          TokenAuthenticator(apollostorage.config.AuthConfig(enabled = false, tokens = Nil))
+        )
       val ready = new AtomicBoolean(true)
 
       val handler = GrpcServer.handler(objectApi, HealthServiceImpl(() => ready.get()))
-      val binding = GrpcServer.bind(handler, "127.0.0.1", 0).futureValue
+      val binding = GrpcServer.bind(handler, "127.0.0.1", 0, https = None).futureValue
       binding.localAddress.getPort should be > 0
 
       val settings =

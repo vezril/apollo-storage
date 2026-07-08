@@ -22,6 +22,12 @@ final case class PostgresConfig(
     connectTimeout: FiniteDuration
 )
 
+/** TLS settings for the gRPC surface (design D34). */
+final case class TlsConfig(enabled: Boolean, keystorePath: String, keystorePassword: String)
+
+/** Bearer-token auth settings (design D35/D39); tokens are secrets. */
+final case class AuthConfig(enabled: Boolean, tokens: Seq[String])
+
 object AppConfig:
   private val ConnectionFactory = "pekko.persistence.r2dbc.connection-factory"
 
@@ -41,6 +47,24 @@ object AppConfig:
   /** gRPC bind port, env-overridable via `GRPC_PORT` (design D17). */
   def grpcPort(config: Config): Int =
     config.getInt("apollostorage.grpc.port")
+
+  def tls(config: Config): TlsConfig =
+    TlsConfig(
+      enabled = config.getBoolean("apollostorage.tls.enabled"),
+      keystorePath = config.getString("apollostorage.tls.keystore-path"),
+      keystorePassword = config.getString("apollostorage.tls.keystore-password")
+    )
+
+  def auth(config: Config): AuthConfig =
+    AuthConfig(
+      enabled = config.getBoolean("apollostorage.auth.enabled"),
+      tokens = config
+        .getString("apollostorage.auth.tokens")
+        .split(",")
+        .map(_.trim)
+        .filter(_.nonEmpty)
+        .toSeq
+    )
 
   def postgres(config: Config): PostgresConfig =
     val cf = config.getConfig(ConnectionFactory)

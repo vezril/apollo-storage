@@ -84,7 +84,8 @@ final class ObjectApiListingIT
       ObjectService(store, entityFor)(using testKit.system, summon),
       store,
       entityFor,
-      repo
+      repo,
+      TokenAuthenticator(apollostorage.config.AuthConfig(enabled = false, tokens = Nil))
     )(using
       testKit.system,
       summon
