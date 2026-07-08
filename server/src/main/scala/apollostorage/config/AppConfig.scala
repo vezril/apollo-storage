@@ -2,6 +2,7 @@ package apollostorage.config
 
 import com.typesafe.config.Config
 
+import java.nio.file.Path
 import scala.concurrent.duration.*
 
 /** HTTP bind settings, resolved from HOCON with env-var overrides (design D8). */
@@ -29,6 +30,13 @@ object AppConfig:
       host = config.getString("apollostorage.http.host"),
       port = config.getInt("apollostorage.http.port")
     )
+
+  /**
+   * Root directory for object payloads (blob store), env-overridable via `BLOB_STORE_PATH` (design
+   * D8/D14).
+   */
+  def blobRoot(config: Config): Path =
+    Path.of(config.getString("apollostorage.blob.root"))
 
   def postgres(config: Config): PostgresConfig =
     val cf = config.getConfig(ConnectionFactory)

@@ -14,8 +14,15 @@ import org.scalatest.matchers.should.Matchers
 import org.scalatest.time.{Millis, Seconds, Span}
 import org.scalatest.wordspec.AnyWordSpec
 
+import apollostorage.blob.{FileSystemBlobStore, ObjectService}
+import org.apache.pekko.stream.scaladsl.Source as StreamSource
+import org.apache.pekko.util.{ByteString, Timeout}
+
+import java.nio.file.{Files, Path}
 import java.sql.DriverManager
 import java.time.Instant
+import scala.concurrent.Future
+import scala.concurrent.duration.*
 import scala.io.Source
 import scala.util.Using
 
@@ -42,6 +49,7 @@ final class BucketPersistenceIT
     PatienceConfig(timeout = Span(10, Seconds), interval = Span(100, Millis))
 
   private var testKit: ActorTestKit = scala.compiletime.uninitialized
+  private var blobStore: FileSystemBlobStore = scala.compiletime.uninitialized
 
   private val now = Instant.parse("2026-07-08T00:00:00Z")
   private val meta = ObjectMetadata("text/plain", 3L)
@@ -52,6 +60,8 @@ final class BucketPersistenceIT
     val _ = Class.forName("org.postgresql.Driver") // ensure JDBC driver registered
     applySchema()
     testKit = ActorTestKit("apollo-it", config())
+    val blobRoot: Path = Files.createTempDirectory("apollo-it-blobs")
+    blobStore = FileSystemBlobStore(blobRoot)(using testKit.system)
 
   override def beforeStop(): Unit =
     if testKit != null then testKit.shutdownTestKit()
@@ -100,7 +110,7 @@ final class BucketPersistenceIT
   private def send(bucket: BucketName, cmd: DomainCommandAlias): StatusReply[Done] =
     val ref = testKit.spawn(BucketEntity(bucket))
     val probe = testKit.createTestProbe[StatusReply[Done]]()
-    ref ! BucketEntity.Command(cmd, probe.ref)
+    ref ! BucketEntity.Execute(cmd, probe.ref)
     val reply = probe.receiveMessage()
     testKit.stop(ref)
     reply
@@ -130,7 +140,7 @@ final class BucketPersistenceIT
       // Fresh entity instance recovers from the journal; the next commit is gen 3.
       val ref = testKit.spawn(BucketEntity(bucket))
       val probe = testKit.createTestProbe[StatusReply[Done]]()
-      ref ! BucketEntity.Command(CommitObject(obj, meta, sums, blob, now), probe.ref)
+      ref ! BucketEntity.Execute(CommitObject(obj, meta, sums, blob, now), probe.ref)
       probe.receiveMessage().isSuccess shouldBe true
       testKit.stop(ref)
 
@@ -145,5 +155,43 @@ final class BucketPersistenceIT
       val reply = send(bucket, CommitObject(ObjectName.unsafe("x"), meta, sums, blob, now))
       reply.isError shouldBe true
       reply.getError.getMessage should include("does not exist")
+    }
+  }
+
+  "Object payloads through the blob store" should {
+    "round-trip a committed payload and keep it readable after an entity restart" in {
+      given Timeout = Timeout(10.seconds)
+      val bucket = BucketName.unsafe("payloads")
+      val name = ObjectName.unsafe("docs/readme.txt")
+      val payload = "integration payload bytes".getBytes("UTF-8")
+
+      send(bucket, CreateBucket(bucket, now)).isSuccess shouldBe true
+
+      val entity = testKit.spawn(BucketEntity(bucket))
+      val service = ObjectService(blobStore, _ => Future.successful(entity))(using
+        testKit.system,
+        summon[Timeout]
+      )
+      val committed = service
+        .commit(
+          bucket,
+          name,
+          ObjectMetadata("text/plain", payload.length.toLong),
+          StreamSource.single(ByteString(payload)),
+          expected = None
+        )
+        .futureValue
+      blobStore.get(committed.ref).futureValue.isDefined shouldBe true
+      testKit.stop(entity)
+
+      // A fresh entity instance recovers from the journal; the committed object's
+      // BlobRef survives and its bytes remain readable.
+      val recovered = testKit.spawn(BucketEntity(bucket))
+      val probe = testKit.createTestProbe[Option[ObjectEntry]]()
+      recovered ! BucketEntity.GetObject(name, probe.ref)
+      val entry = probe.receiveMessage().getOrElse(fail("object lost after recovery"))
+      entry.blob shouldBe committed.ref
+      blobStore.get(entry.blob).futureValue.isDefined shouldBe true
+      testKit.stop(recovered)
     }
   }
