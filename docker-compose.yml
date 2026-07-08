@@ -1,0 +1,42 @@
+# Self-contained ApolloStorage deployment: the service + its PostgreSQL journal.
+# Postgres initializes the event-journal schema from ./ddl on first boot.
+#
+#   docker compose up
+#   curl localhost:8080/health   # -> {"status":"UP",...}
+#
+# By default this pulls the published image. To run a locally built image:
+#   sbt server/Docker/publishLocal
+#   APOLLOSTORAGE_IMAGE=apollostorage:<version> docker compose up
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: apollostorage
+      POSTGRES_USER: apollostorage
+      POSTGRES_PASSWORD: apollostorage
+    volumes:
+      - ./ddl/create_tables_postgres.sql:/docker-entrypoint-initdb.d/10-schema.sql:ro
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U apollostorage -d apollostorage"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  apollostorage:
+    image: ${APOLLOSTORAGE_IMAGE:-calvinference/apollostorage:latest}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      HTTP_PORT: "8080"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: apollostorage
+      POSTGRES_USER: apollostorage
+      POSTGRES_PASSWORD: apollostorage
+    ports:
+      - "8080:8080"
+
+volumes:
+  pgdata:

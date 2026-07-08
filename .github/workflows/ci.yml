@@ -1,0 +1,66 @@
+name: CI
+
+# Verifies every pull request targeting development or main: formatting,
+# compilation, and the full test suite (unit + testcontainers integration).
+# Merging is blocked unless all required checks pass (branch protection).
+on:
+  pull_request:
+    branches: [development, main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Formatting is a separate job so a scalafmt violation fails independently of
+  # the tests (a green test suite must not mask a format failure).
+  format:
+    name: Format (scalafmt)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-scala
+      - name: Check formatting
+        run: sbt -batch scalafmtCheckAll scalafmtSbtCheck
+
+  build-test:
+    name: Compile & test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # sbt-dynver needs full history + tags
+      - uses: ./.github/actions/setup-scala
+      - name: Compile
+        run: sbt -batch compile Test/compile
+      - name: Test (unit + integration)
+        run: sbt -batch test # testcontainers uses the runner's Docker daemon
+
+  # Documentation checklist: referenced files/links resolve and badges point at
+  # real workflows (documentation spec).
+  docs:
+    name: Docs verification
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify docs
+        run: bash scripts/verify-docs.sh
+
+  # sbt-dynver sanity: an untagged commit must yield a snapshot (non-releasable)
+  # version so releases can only come from an explicit tag.
+  version-check:
+    name: Version derivation (dynver)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-scala
+      - name: Assert untagged build is a snapshot
+        run: |
+          VERSION=$(sbt -batch -error 'print version' | tail -n1 | tr -d '[:space:]')
+          echo "Derived version: $VERSION"
+          case "$VERSION" in
+            *SNAPSHOT*|*-*-*) echo "OK: snapshot version" ;;
+            *) echo "ERROR: untagged build produced a clean release version '$VERSION'"; exit 1 ;;
+          esac
