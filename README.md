@@ -2,9 +2,9 @@
 
 # ApolloStorage
 
-[![CI](https://github.com/calvinference/apollo-storage/actions/workflows/ci.yml/badge.svg)](https://github.com/calvinference/apollo-storage/actions/workflows/ci.yml)
-[![Release](https://github.com/calvinference/apollo-storage/actions/workflows/release.yml/badge.svg)](https://github.com/calvinference/apollo-storage/actions/workflows/release.yml)
-[![Dev publish](https://github.com/calvinference/apollo-storage/actions/workflows/dev.yml/badge.svg)](https://github.com/calvinference/apollo-storage/actions/workflows/dev.yml)
+[![CI](https://github.com/vezril/apollo-storage/actions/workflows/ci.yml/badge.svg)](https://github.com/vezril/apollo-storage/actions/workflows/ci.yml)
+[![Release](https://github.com/vezril/apollo-storage/actions/workflows/release.yml/badge.svg)](https://github.com/vezril/apollo-storage/actions/workflows/release.yml)
+[![Dev publish](https://github.com/vezril/apollo-storage/actions/workflows/dev.yml/badge.svg)](https://github.com/vezril/apollo-storage/actions/workflows/dev.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 A GCS-inspired, event-sourced object store built for homelab-production use.
