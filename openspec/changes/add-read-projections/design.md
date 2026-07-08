@@ -24,19 +24,23 @@ Decision numbering continues the project log (previous change ended at D20).
 
 ## Decisions
 
-### D21 — Pekko Projections (r2dbc, eventsBySlices, exactly-once)
+### D21 — Pekko Projections (r2dbc, eventsBySlices, at-least-once + idempotent)
 
-Consume `EventSourcedProvider.eventsBySlices[Event]` from the r2dbc read journal
-and run an `R2dbcProjection.exactlyOnce` projection. The handler writes read-model
-rows using the projection's `R2dbcSession`, so the row change and the offset commit
-happen in **one transaction**.
-- **Why**: exactly-once + same-transaction offset means no duplicate or lost
-  read-model updates even across restarts; `eventsBySlices` is the rescalable,
-  recommended source (D1). Backtracking duplicates are de-duplicated by the
-  Projection, which also enforces per-persistence-id order.
-- **Alternatives**: `atLeastOnce` with idempotent upserts (viable, but exactly-once
-  is simpler to reason about here); tag-based `eventsByTag` (rejected — not
-  rescalable, D1 chose slices).
+Consume `EventSourcedProvider.eventsBySlices[Event]` from the r2dbc read journal and
+run an `R2dbcProjection.atLeastOnce` projection whose handler applies **idempotent**
+read-model changes (upserts with `ON CONFLICT`, deletes) through the
+`ReadModelRepository`. The offset is saved after processing; a reprocessed event
+re-applies with no visible effect.
+- **Why**: an idempotent handler makes at-least-once observably equivalent to
+  exactly-once for this read model (the model always converges to match the
+  journal), while keeping all read-model DML in one testable `ReadModelRepository`
+  (rather than split between a repository for reads and raw `R2dbcSession` SQL for
+  writes). `eventsBySlices` is the rescalable, recommended source (D1); the
+  Projection de-duplicates backtracking and enforces per-persistence-id order.
+- **Alternatives**: `exactlyOnce` writing through the projection's `R2dbcSession`
+  in the offset transaction (stronger, but forces write SQL out of the repository
+  and duplicates it); tag-based `eventsByTag` (rejected — not rescalable, D1 chose
+  slices).
 
 ### D22 — Read model schema
 

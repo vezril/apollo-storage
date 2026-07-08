@@ -32,10 +32,12 @@ removes the object, and `BucketDeleted` removes the bucket and all its objects.
 
 ### Requirement: Durable offsets and restart resumption
 
-The projection SHALL commit its stream offset in the same transaction as the
-read-model change (exactly-once), so after a restart it resumes from the last
-processed event without reprocessing or losing updates, and a projection starting
-from an empty offset SHALL rebuild the model from the full journal history.
+The projection SHALL persist its stream offset durably and apply read-model changes
+through an idempotent handler (idempotent upserts and deletes), so after a restart
+it resumes from the last saved offset and the read model matches the journal exactly
+— a reprocessed event re-applies with no visible effect (no duplicated or lost
+rows). A projection starting from an empty offset SHALL rebuild the model from the
+full journal history.
 
 #### Scenario: Resume after restart without duplication
 - **GIVEN** the projection has processed a set of events

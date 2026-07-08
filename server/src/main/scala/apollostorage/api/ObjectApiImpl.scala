@@ -32,7 +32,8 @@ import scala.concurrent.{ExecutionContext, Future}
 final class ObjectApiImpl(
     objectService: ObjectService,
     blobStore: BlobStore,
-    entityFor: BucketName => Future[ActorRef[BucketEntity.Command]]
+    entityFor: BucketName => Future[ActorRef[BucketEntity.Command]],
+    readModel: apollostorage.projection.ReadModelRepository
 )(using system: ActorSystem[?], timeout: Timeout)
     extends ObjectApi:
 
@@ -130,6 +131,42 @@ final class ObjectApiImpl(
       name <- objectName(in.`object`)
       _ <- objectService.delete(bucket, name)
     yield DeleteObjectResponse(in.bucket, in.`object`)).recoverWith(mapFailure)
+
+  // --- listing (read model; eventually consistent) ---------------------------
+
+  def listBuckets(in: ListBucketsRequest): Future[ListBucketsResponse] =
+    readModel
+      .listBuckets(pageSize(in.pageSize), in.pageToken)
+      .map(p => ListBucketsResponse(p.items, p.nextPageToken))
+      .recoverWith(mapFailure)
+
+  def listObjects(in: ListObjectsRequest): Future[ListObjectsResponse] =
+    bucketName(in.bucket)
+      .flatMap { bucket =>
+        readModel.bucketExists(bucket.value).flatMap {
+          case false => Future.failed(DomainStatus.exceptionFor(DomainError.BucketNotFound))
+          case true =>
+            readModel
+              .listObjects(bucket.value, in.prefix, pageSize(in.pageSize), in.pageToken)
+              .map { page =>
+                ListObjectsResponse(page.items.map(toEntry), page.nextPageToken)
+              }
+        }
+      }
+      .recoverWith(mapFailure)
+
+  private def pageSize(requested: Int): Int =
+    if requested <= 0 then 100 else math.min(requested, 1000)
+
+  private def toEntry(row: apollostorage.projection.ObjectRow): apollostorage.grpc.ObjectEntry =
+    apollostorage.grpc.ObjectEntry(
+      `object` = row.key,
+      generation = row.generation,
+      size = row.size,
+      contentType = row.contentType,
+      crc32C = row.crc32c,
+      md5 = row.md5
+    )
 
   // --- helpers ---------------------------------------------------------------
 

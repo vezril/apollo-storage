@@ -16,6 +16,41 @@ service ObjectApi {
 
   rpc HeadObject(HeadObjectRequest) returns (ObjectMetadata);
   rpc DeleteObject(DeleteObjectRequest) returns (DeleteObjectResponse);
+
+  // Listing (served from the read model; eventually consistent).
+  rpc ListBuckets(ListBucketsRequest) returns (ListBucketsResponse);
+  rpc ListObjects(ListObjectsRequest) returns (ListObjectsResponse);
+}
+
+message ListBucketsRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+}
+
+message ListBucketsResponse {
+  repeated string buckets = 1;
+  string next_page_token = 2;
+}
+
+message ListObjectsRequest {
+  string bucket = 1;
+  string prefix = 2;
+  int32 page_size = 3;
+  string page_token = 4;
+}
+
+message ListObjectsResponse {
+  repeated ObjectEntry objects = 1;
+  string next_page_token = 2;
+}
+
+message ObjectEntry {
+  string object = 1;
+  int64 generation = 2;
+  int64 size = 3;
+  string content_type = 4;
+  string crc32c = 5;
+  string md5 = 6;
 }
 
 message CreateBucketRequest { string bucket = 1; }

@@ -7,8 +7,10 @@ import apollostorage.config.AppConfig
 import apollostorage.domain.BucketName
 import apollostorage.http.{HealthRoutes, HttpServer}
 import apollostorage.persistence.{BucketEntity, BucketEntityManager, PersistenceReadiness}
+import apollostorage.projection.{BucketProjection, ReadModelRepository}
 import com.typesafe.config.ConfigFactory
 import org.apache.pekko.actor.typed.scaladsl.AskPattern.*
+import org.apache.pekko.projection.ProjectionBehavior
 import org.apache.pekko.actor.typed.{ActorRef, ActorSystem, Scheduler}
 import org.apache.pekko.http.scaladsl.Http.ServerBinding
 import org.apache.pekko.util.Timeout
@@ -50,7 +52,8 @@ object Main:
     // The object stack builds without touching the database.
     val blobStore = FileSystemBlobStore(blobRoot)
     val objectService = ObjectService(blobStore, entityFor)
-    val objectApi = ObjectApiImpl(objectService, blobStore, entityFor)
+    val readModel = new ReadModelRepository(AppConfig.postgres(config))
+    val objectApi = ObjectApiImpl(objectService, blobStore, entityFor, readModel)
     val health = HealthServiceImpl(() => readiness.get())
 
     val httpRoutes = HealthRoutes(BuildInfo.version, () => readiness.get())
@@ -80,6 +83,10 @@ object Main:
           case Success(_) =>
             PersistenceReadiness.check(AppConfig.postgres(config)).onComplete {
               case Success(_) =>
+                // Start the read-model projection now that Postgres is reachable.
+                system ! BucketEntityManager.RunProjection(
+                  ProjectionBehavior(BucketProjection(readModel))
+                )
                 readiness.set(true)
                 log.info("Postgres journal + blob store ready — ApolloStorage is UP")
               case Failure(ex) =>

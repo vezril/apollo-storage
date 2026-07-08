@@ -97,6 +97,13 @@ orchestration.
 | `GetObject` | server-streaming (header then chunks) | download a payload |
 | `HeadObject` | unary | object metadata only |
 | `DeleteObject` | unary | delete an object |
+| `ListBuckets` | unary | list buckets (paginated) |
+| `ListObjects` | unary | list a bucket's objects by key prefix (paginated) |
+
+**Consistency:** `HeadObject`/`GetObject` are **strongly consistent** (served from
+the entity). `ListBuckets`/`ListObjects` are **eventually consistent** — they read
+a projection of the event journal and lag writes by a bounded interval, so an
+object may not appear in a listing the instant `PutObject` returns.
 
 Domain outcomes map to gRPC status codes (`NOT_FOUND`, `ALREADY_EXISTS`,
 `INVALID_ARGUMENT`, `FAILED_PRECONDITION`). Example with
@@ -107,6 +114,10 @@ port, so use `-plaintext`):
 # create a bucket
 grpcurl -plaintext -d '{"bucket":"media"}' \
   localhost:8443 apollostorage.grpc.ObjectApi/CreateBucket
+
+# list a bucket's objects under a prefix (eventually consistent)
+grpcurl -plaintext -d '{"bucket":"media","prefix":"photos/","page_size":100}' \
+  localhost:8443 apollostorage.grpc.ObjectApi/ListObjects
 
 # health check
 grpcurl -plaintext -d '{}' localhost:8443 grpc.health.v1.Health/Check
