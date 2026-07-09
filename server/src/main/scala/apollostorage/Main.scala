@@ -9,10 +9,16 @@ import apollostorage.api.{
   TlsContext,
   TokenAuthenticator
 }
-import apollostorage.blob.{BlobMetrics, BlobStoreReadiness, FileSystemBlobStore, ObjectService}
+import apollostorage.blob.{
+  BlobGc,
+  BlobMetrics,
+  BlobStoreReadiness,
+  FileSystemBlobStore,
+  ObjectService
+}
 import apollostorage.build.BuildInfo
 import apollostorage.config.AppConfig
-import apollostorage.http.{HealthRoutes, HttpServer, MetricsRoutes}
+import apollostorage.http.{AdminRoutes, HealthRoutes, HttpServer, MetricsRoutes}
 import apollostorage.metrics.MetricsRegistry
 import apollostorage.persistence.{BucketSharding, PersistenceReadiness}
 import apollostorage.projection.{BucketProjection, ReadModelRepository}
@@ -91,8 +97,22 @@ object Main:
     val objectApi = ObjectApiImpl(objectService, blobStore, entityFor, readModel, authenticator)
     val health = HealthServiceImpl(() => readiness.get())
 
+    // Orphan-blob GC admin trigger (design D50-D56). Off by default; when enabled, the sweep is
+    // reachable at POST /admin/blob-gc, dry-run unless confirmed, gated by the same auth.
+    val blobGcCfg = AppConfig.blobGc(config)
+    val adminRoutes = Option.when(blobGcCfg.enabled) {
+      val gc =
+        new BlobGc(blobStore, entityFor, java.time.Duration.ofMillis(blobGcCfg.grace.toMillis))
+      AdminRoutes.blobGc(delete => gc.sweep(delete = delete), authenticator)
+    }
+    log.info(
+      "Blob GC {} (POST /admin/blob-gc)",
+      if blobGcCfg.enabled then "ENABLED" else "DISABLED"
+    )
+
     val healthRoutes = HealthRoutes(BuildInfo.version, () => readiness.get())
-    val httpRoutes = metrics.fold(healthRoutes)(m => healthRoutes ~ MetricsRoutes(m))
+    val httpRoutes =
+      (metrics.map(MetricsRoutes.apply).toList ++ adminRoutes.toList).foldLeft(healthRoutes)(_ ~ _)
     val grpcHandlerRaw = GrpcServer.handler(objectApi, health)
     val grpcHandler = metrics.fold(grpcHandlerRaw)(m => GrpcMetrics.instrument(grpcHandlerRaw, m))
     log.info(

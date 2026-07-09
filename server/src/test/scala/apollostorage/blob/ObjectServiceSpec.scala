@@ -155,6 +155,10 @@ final class ObjectServiceSpec
           store.put(b, d, e)
         def get(r: BlobRef) = store.get(r)
         def delete(r: BlobRef) = Future.failed(new RuntimeException("delete boom"))
+        def listBucketsOnDisk() = store.listBucketsOnDisk()
+        def listStoredBlobs(b: BucketName) = store.listStoredBlobs(b)
+        def listTempArtifacts(b: BucketName) = store.listTempArtifacts(b)
+        def deleteTempArtifact(b: BucketName, id: String) = store.deleteTempArtifact(b, id)
       val svc = ObjectService(deleteFailing, entityFor)
       val committed =
         svc.commit(bucket, name, meta, Source.single(ByteString("bytes")), None).futureValue
@@ -162,5 +166,37 @@ final class ObjectServiceSpec
       svc.delete(bucket, name).futureValue // succeeds despite blob-delete failure
       lookup(bucket, name) shouldBe None // object is gone (ObjectDeleted persisted)
       store.get(committed.ref).futureValue.isDefined shouldBe true // blob remains as an orphan
+    }
+
+    "reclaim the superseded blob when an object is overwritten" in {
+      val bucket = newBucket("overwrite")
+      val name = ObjectName.unsafe("f.txt")
+      val svc = ObjectService(store, entityFor)
+      val first = svc.commit(bucket, name, meta, Source.single(ByteString("v1")), None).futureValue
+      val second =
+        svc.commit(bucket, name, meta, Source.single(ByteString("version-2")), None).futureValue
+      first.ref should not be second.ref
+      store.get(first.ref).futureValue shouldBe None // superseded blob reclaimed
+      store.get(second.ref).futureValue.isDefined shouldBe true // new generation is live
+    }
+
+    "leave the superseded blob as an orphan (not fail the commit) when its reclaim fails" in {
+      val bucket = newBucket("overwrite-fail")
+      val name = ObjectName.unsafe("f.txt")
+      val deleteFailing = new BlobStore:
+        def put(b: BucketName, d: Source[ByteString, Any], e: Option[Checksums]) =
+          store.put(b, d, e)
+        def get(r: BlobRef) = store.get(r)
+        def delete(r: BlobRef) = Future.failed(new RuntimeException("delete boom"))
+        def listBucketsOnDisk() = store.listBucketsOnDisk()
+        def listStoredBlobs(b: BucketName) = store.listStoredBlobs(b)
+        def listTempArtifacts(b: BucketName) = store.listTempArtifacts(b)
+        def deleteTempArtifact(b: BucketName, id: String) = store.deleteTempArtifact(b, id)
+      val svc = ObjectService(deleteFailing, entityFor)
+      val first = svc.commit(bucket, name, meta, Source.single(ByteString("v1")), None).futureValue
+      val second =
+        svc.commit(bucket, name, meta, Source.single(ByteString("version-2")), None).futureValue
+      lookup(bucket, name).map(_.blob) shouldBe Some(second.ref) // latest is live
+      store.get(first.ref).futureValue.isDefined shouldBe true // superseded blob remains (orphan)
     }
   }

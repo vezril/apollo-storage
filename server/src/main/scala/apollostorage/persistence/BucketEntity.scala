@@ -1,6 +1,7 @@
 package apollostorage.persistence
 
 import apollostorage.domain.{
+  BlobRef,
   BucketDomain,
   BucketName,
   BucketState,
@@ -38,6 +39,13 @@ object BucketEntity:
   final case class GetObject(name: ObjectName, replyTo: ActorRef[Option[ObjectEntry]])
       extends Command
 
+  /**
+   * Read-only query of the `BlobRef`s of all currently-live objects (one per name, the current
+   * generation), used by blob-gc reconciliation to assemble the authoritative live set. Persists
+   * nothing.
+   */
+  final case class GetLiveBlobRefs(replyTo: ActorRef[Set[BlobRef]]) extends Command
+
   def persistenceId(bucket: String): PersistenceId =
     PersistenceId.ofUniqueId(s"$EntityPrefix|$bucket")
 
@@ -63,3 +71,9 @@ object BucketEntity:
           case BucketState.Active(_, objects) => objects.get(name)
           case _ => None
         Effect.reply(replyTo)(entry)
+
+      case GetLiveBlobRefs(replyTo) =>
+        val refs = state match
+          case BucketState.Active(_, objects) => objects.values.map(_.blob).toSet
+          case _ => Set.empty[BlobRef]
+        Effect.reply(replyTo)(refs)

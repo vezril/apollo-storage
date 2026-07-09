@@ -240,6 +240,38 @@ scrape_configs:
       - targets: ["apollo.lan:8080"]
 ```
 
+## Reclaiming orphaned storage (blob GC)
+
+A payload can be left on disk with no live object referencing it — an **orphan**. Overwrites
+reclaim the superseded payload automatically, but a crash between persisting a payload and its
+metadata event, or a failed delete, can still leave one behind (plus `.tmp` debris from aborted
+writes). The **blob-gc** sweep reconciles the store against live state and reclaims them.
+
+It is **off by default** and, when enabled, exposed as an admin endpoint on the HTTP port:
+
+```bash
+# dry run — reports what WOULD be reclaimed, deletes nothing
+curl -sX POST localhost:8080/admin/blob-gc
+# -> {"dryRun":true,"orphansFound":3,"bytesOrphaned":40961,"reclaimed":0, ...}
+
+# confirmed — actually reclaim
+curl -sX POST 'localhost:8080/admin/blob-gc?delete=true'
+# -> {"dryRun":false,"reclaimed":3,"bytesReclaimed":40961,"tmpReclaimed":1, ...}
+```
+
+How it stays safe:
+
+- **Dry-run by default** — deletion happens only with `?delete=true`, after you read the report.
+- **Grace period** (`BLOB_GC_GRACE`, default 24h) — a blob is reclaimed only if it is unreferenced
+  **and** older than the grace period, so a payload written just before its commit is never swept.
+- **Authoritative live set** — the sweep asks each bucket entity directly (strongly consistent);
+  a bucket it can't reach is skipped, never swept blind.
+- **Manual trigger only**, gated by API auth when auth is enabled (pass the same
+  `authorization: Bearer …`), and reclamation is best-effort (a failed unlink is counted, not fatal).
+
+> **Invariant:** your **backup retention must outlive the grace period** (and your sweep cadence),
+> so any blob the sweep reclaims has already been backed up. Tune `BLOB_GC_GRACE` accordingly.
+
 ## Running a cluster
 
 ApolloStorage runs as a Pekko cluster (design D27–D33). A single replica forms a
@@ -380,6 +412,8 @@ overridable by environment variables — no secrets live in the repo or image.
 | `apollostorage.auth.enabled`                           | `AUTH_ENABLED`            | `false`        |
 | `apollostorage.auth.tokens`                            | `AUTH_TOKENS`             | _(none)_       |
 | `apollostorage.metrics.enabled`                        | `METRICS_ENABLED`         | `true`         |
+| `apollostorage.blob-gc.enabled`                        | `BLOB_GC_ENABLED`         | `false`        |
+| `apollostorage.blob-gc.grace`                          | `BLOB_GC_GRACE`           | `24 hours`     |
 | `pekko.persistence.r2dbc.connection-factory.host`      | `POSTGRES_HOST`           | `localhost`    |
 | `pekko.persistence.r2dbc.connection-factory.port`      | `POSTGRES_PORT`           | `5432`         |
 | `pekko.persistence.r2dbc.connection-factory.database`  | `POSTGRES_DB`             | `apollostorage`|
