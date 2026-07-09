@@ -44,6 +44,25 @@ testcontainers integration against real PostgreSQL.
 - JDK 21+
 - [sbt](https://www.scala-sbt.org/)
 - Docker (for the integration tests and for running the service)
+- A GitHub token with `read:packages`, exported as `LEXICON_TOKEN` (or `GITHUB_TOKEN`),
+  to resolve the gRPC contract artifact — see **gRPC contract** below.
+
+### gRPC contract (the Lexicon)
+
+The gRPC service definition is **not** in this repo — it lives in the
+[Lexicon](https://github.com/vezril/the-lexicon), the constellation's single source of
+truth for wire contracts, and is consumed as a pinned artifact
+(`io.codex:lexicon-grpc`) published to GitHub Packages. The server generates and
+implements its stubs from that artifact rather than a local `.proto` (design
+`adopt-lexicon-grpc-contracts`). Resolving it needs a `read:packages` token:
+
+```bash
+export LEXICON_TOKEN=<a GitHub PAT with read:packages>
+```
+
+In CI, supply the same value as a repository secret named `LEXICON_TOKEN`. (GitHub
+Packages Maven reads require auth even for public packages, and the built-in Actions
+token cannot read another repository's package.)
 
 ### Run the tests
 
