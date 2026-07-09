@@ -1,9 +1,9 @@
 package apollostorage.api
 
 import apollostorage.blob.{FileSystemBlobStore, ObjectService}
-import apollostorage.config.{AuthConfig, PostgresConfig, TlsConfig}
+import apollostorage.config.{AuthConfig, Principal, PostgresConfig, Scope, TlsConfig}
 import apollostorage.domain.BucketName
-import apollostorage.grpc.{CreateBucketRequest, ObjectApiClient}
+import apollostorage.grpc.{CreateBucketRequest, HeadObjectRequest, ObjectApiClient}
 import apollostorage.persistence.{BucketEntity, BucketSharding}
 import com.typesafe.config.ConfigFactory
 import grpc.health.v1.{HealthCheckRequest, HealthCheckResponse, HealthClient}
@@ -39,7 +39,8 @@ final class TlsAuthSpec
 
   private given Timeout = Timeout(10.seconds)
   private given scala.concurrent.ExecutionContext = system.executionContext
-  private val token = "test-secret-token"
+  private val token = "test-secret-token" // write scope
+  private val readToken = "read-secret-token" // read scope
   private var client: ObjectApiClient = scala.compiletime.uninitialized
   private var health: HealthClient = scala.compiletime.uninitialized
 
@@ -64,7 +65,12 @@ final class TlsAuthSpec
     val readModel = new apollostorage.projection.ReadModelRepository(
       PostgresConfig("localhost", 1, "x", "x", "x", 1.second)
     )
-    val authenticator = new TokenAuthenticator(AuthConfig(enabled = true, tokens = Seq(token)))
+    val authenticator = new TokenAuthenticator(
+      AuthConfig(
+        enabled = true,
+        principals = Seq(Principal(token, Scope.Write), Principal(readToken, Scope.Read))
+      )
+    )
     val impl =
       new ObjectApiImpl(ObjectService(store, entityFor), store, entityFor, readModel, authenticator)
 
@@ -111,6 +117,30 @@ final class TlsAuthSpec
           .failed
           .futureValue
       ) shouldBe Status.Code.UNAUTHENTICATED
+    }
+
+    "reject a write RPC from a read-scoped token as PERMISSION_DENIED" in {
+      codeOf(
+        client
+          .createBucket()
+          .addHeader("authorization", s"Bearer $readToken")
+          .invoke(CreateBucketRequest("readonly-denied"))
+          .failed
+          .futureValue
+      ) shouldBe Status.Code.PERMISSION_DENIED
+    }
+
+    "allow a read RPC from a read-scoped token (past the scope gate)" in {
+      // HeadObject on a missing object returns NOT_FOUND — proving the read token was
+      // authorized for the read operation (it reached the domain check, not PERMISSION_DENIED).
+      codeOf(
+        client
+          .headObject()
+          .addHeader("authorization", s"Bearer $readToken")
+          .invoke(HeadObjectRequest("secure", "missing.txt"))
+          .failed
+          .futureValue
+      ) shouldBe Status.Code.NOT_FOUND
     }
 
     "serve health over TLS without a token" in {

@@ -65,7 +65,7 @@ final class ObjectApiSpec
       store,
       entityFor,
       readModel,
-      TokenAuthenticator(apollostorage.config.AuthConfig(enabled = false, tokens = Nil))
+      TokenAuthenticator(apollostorage.config.AuthConfig(enabled = false, principals = Nil))
     )
 
     val handler: HttpRequest => Future[HttpResponse] =

@@ -178,12 +178,27 @@ your secret store — see the commented block in `docker-compose.yml`):
 | `TLS_KEYSTORE_PATH` | path to the mounted PKCS#12 keystore |
 | `TLS_KEYSTORE_PASSWORD` | keystore password (secret) |
 | `AUTH_ENABLED` | `true` to require a bearer token on every object RPC |
-| `AUTH_TOKENS` | comma-separated accepted tokens (secret) |
+| `AUTH_TOKENS` | comma-separated **full-access** (write) tokens (secret) |
+| `AUTH_PRINCIPALS` | comma-separated **scoped** tokens as `token:scope`, scope = `read`\|`write` (secret) |
 
-Misconfiguration fails fast: `AUTH_ENABLED=true` with no `AUTH_TOKENS`, or a missing
-/ wrong-password keystore, aborts startup with a clear error. Tokens are compared in
-constant time. The `grpc.health.v1.Health` service stays **unauthenticated** so
-orchestrators can probe it without a token.
+**Token scopes** — a token carries an operation scope: `read` (the read RPCs `GetObject`,
+`HeadObject`, `ListBuckets`, `ListObjects`) or `write` (which also permits reads, and covers
+`CreateBucket`, `DeleteBucket`, `PutObject`, `DeleteObject` **and** the `POST /admin/blob-gc`
+sweep). A read token presented to a write operation gets **`PERMISSION_DENIED`** (distinct from
+`UNAUTHENTICATED` for a missing/unknown token). Issue least-privilege tokens with
+`AUTH_PRINCIPALS`, e.g. a read-only backup token:
+
+```bash
+AUTH_PRINCIPALS="backup-ro:read,ingest-rw:write"
+```
+
+Tokens in `AUTH_PRINCIPALS` **must not contain `:`** (the scope delimiter). Entries in
+`AUTH_TOKENS` are treated as `write` (full access), so existing deployments are unchanged.
+
+Misconfiguration fails fast: `AUTH_ENABLED=true` with no tokens, a malformed `AUTH_PRINCIPALS`
+entry (unknown scope, or a `:` in a token), or a missing / wrong-password keystore, aborts
+startup with a clear error. Tokens are compared in constant time. The `grpc.health.v1.Health`
+service stays **unauthenticated** so orchestrators can probe it without a token.
 
 **3. Call the secured API** — trust the cert with `-cacert` and pass the token in an
 `authorization` header:
@@ -411,6 +426,7 @@ overridable by environment variables — no secrets live in the repo or image.
 | `apollostorage.tls.keystore-password`                  | `TLS_KEYSTORE_PASSWORD`   | _(none)_       |
 | `apollostorage.auth.enabled`                           | `AUTH_ENABLED`            | `false`        |
 | `apollostorage.auth.tokens`                            | `AUTH_TOKENS`             | _(none)_       |
+| `apollostorage.auth.principals`                        | `AUTH_PRINCIPALS`         | _(none)_       |
 | `apollostorage.metrics.enabled`                        | `METRICS_ENABLED`         | `true`         |
 | `apollostorage.blob-gc.enabled`                        | `BLOB_GC_ENABLED`         | `false`        |
 | `apollostorage.blob-gc.grace`                          | `BLOB_GC_GRACE`           | `24 hours`     |

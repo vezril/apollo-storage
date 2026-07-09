@@ -1,6 +1,7 @@
 package apollostorage.api
 
 import apollostorage.blob.{BlobStore, ObjectService}
+import apollostorage.config.Scope
 import apollostorage.domain.Command.{CreateBucket, DeleteBucket}
 import apollostorage.domain.{
   BucketName,
@@ -46,14 +47,14 @@ final class ObjectApiImpl(
   // --- bucket lifecycle ------------------------------------------------------
 
   def createBucket(in: CreateBucketRequest, metadata: Metadata): Future[BucketResponse] =
-    guarded(metadata) {
+    guarded(metadata, Scope.Write) {
       bucketName(in.bucket).flatMap { bucket =>
         execute(bucket, CreateBucket(bucket, Instant.now())).map(_ => BucketResponse(bucket.value))
       }
     }
 
   def deleteBucket(in: DeleteBucketRequest, metadata: Metadata): Future[BucketResponse] =
-    guarded(metadata) {
+    guarded(metadata, Scope.Write) {
       bucketName(in.bucket).flatMap { bucket =>
         execute(bucket, DeleteBucket(bucket, Instant.now())).map(_ => BucketResponse(bucket.value))
       }
@@ -65,7 +66,7 @@ final class ObjectApiImpl(
       in: Source[PutObjectRequest, NotUsed],
       metadata: Metadata
   ): Future[PutObjectResponse] =
-    guarded(metadata) {
+    guarded(metadata, Scope.Write) {
       in.prefixAndTail(1).runWith(Sink.head).flatMap { case (prefix, tail) =>
         prefix.headOption.map(_.payload) match
           case Some(PutObjectRequest.Payload.Header(header)) =>
@@ -102,7 +103,7 @@ final class ObjectApiImpl(
 
   def getObject(in: GetObjectRequest, metadata: Metadata): Source[GetObjectResponse, NotUsed] =
     val stream = Future.unit.flatMap { _ =>
-      authenticator.check(metadata)
+      authenticator.authorize(metadata, Scope.Read)
       for
         bucket <- bucketName(in.bucket)
         name <- objectName(in.`object`)
@@ -126,7 +127,7 @@ final class ObjectApiImpl(
       .mapMaterializedValue(_ => NotUsed)
 
   def headObject(in: HeadObjectRequest, metadata: Metadata): Future[ObjectMetadata] =
-    guarded(metadata) {
+    guarded(metadata, Scope.Read) {
       for
         bucket <- bucketName(in.bucket)
         name <- objectName(in.`object`)
@@ -135,7 +136,7 @@ final class ObjectApiImpl(
     }
 
   def deleteObject(in: DeleteObjectRequest, metadata: Metadata): Future[DeleteObjectResponse] =
-    guarded(metadata) {
+    guarded(metadata, Scope.Write) {
       for
         bucket <- bucketName(in.bucket)
         name <- objectName(in.`object`)
@@ -146,14 +147,14 @@ final class ObjectApiImpl(
   // --- listing (read model; eventually consistent) ---------------------------
 
   def listBuckets(in: ListBucketsRequest, metadata: Metadata): Future[ListBucketsResponse] =
-    guarded(metadata) {
+    guarded(metadata, Scope.Read) {
       readModel
         .listBuckets(pageSize(in.pageSize), in.pageToken)
         .map(p => ListBucketsResponse(p.items, p.nextPageToken))
     }
 
   def listObjects(in: ListObjectsRequest, metadata: Metadata): Future[ListObjectsResponse] =
-    guarded(metadata) {
+    guarded(metadata, Scope.Read) {
       bucketName(in.bucket).flatMap { bucket =>
         readModel.bucketExists(bucket.value).flatMap {
           case false => Future.failed(DomainStatus.exceptionFor(DomainError.BucketNotFound))
@@ -167,11 +168,11 @@ final class ObjectApiImpl(
 
   // --- helpers ---------------------------------------------------------------
 
-  /** Authenticate, then run the body; any failure maps to a gRPC status. */
-  private def guarded[A](metadata: Metadata)(body: => Future[A]): Future[A] =
+  /** Authorize the required scope, then run the body; any failure maps to a gRPC status. */
+  private def guarded[A](metadata: Metadata, required: Scope)(body: => Future[A]): Future[A] =
     Future.unit
       .flatMap { _ =>
-        authenticator.check(metadata); body
+        authenticator.authorize(metadata, required); body
       }
       .recoverWith(mapFailure)
 
