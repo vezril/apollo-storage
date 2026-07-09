@@ -11,7 +11,8 @@ import java.security.MessageDigest
 import java.util.UUID
 import java.util.zip.CRC32C
 import scala.concurrent.{ExecutionContext, Future}
-import scala.util.Try
+import scala.jdk.CollectionConverters.*
+import scala.util.{Try, Using}
 import scala.util.control.NonFatal
 
 /**
@@ -86,6 +87,63 @@ final class FileSystemBlobStore(root: Path, metrics: BlobMetrics = BlobMetrics.n
       recordOp("delete", result, start)
       result
     }
+
+  // --- Enumeration for blob-gc reconciliation (design D51) ---
+
+  private val TmpDir = ".tmp"
+
+  def listBucketsOnDisk(): Future[Vector[BucketName]] = Future {
+    if !Files.isDirectory(root) then Vector.empty
+    else
+      Using.resource(Files.list(root)) { s =>
+        s.iterator.asScala
+          .filter(Files.isDirectory(_))
+          .map(p => BucketName.unsafe(p.getFileName.toString))
+          .toVector
+      }
+  }
+
+  /** Walk `<root>/<bucket>/<shard>/<id>`, skipping the bucket's `.tmp` dir. */
+  def listStoredBlobs(bucket: BucketName): Future[Vector[StoredBlob]] = Future {
+    val bucketDir = root.resolve(bucket.value)
+    if !Files.isDirectory(bucketDir) then Vector.empty
+    else
+      Using.resource(Files.walk(bucketDir)) { s =>
+        s.iterator.asScala
+          .filter(Files.isRegularFile(_))
+          .filterNot(_.startsWith(bucketDir.resolve(TmpDir)))
+          .map { p =>
+            val rel = root.relativize(p).toString
+            StoredBlob(BlobRef(rel), Files.getLastModifiedTime(p).toInstant, Files.size(p))
+          }
+          .toVector
+      }
+  }
+
+  def listTempArtifacts(bucket: BucketName): Future[Vector[TempArtifact]] = Future {
+    val tmp = root.resolve(bucket.value).resolve(TmpDir)
+    if !Files.isDirectory(tmp) then Vector.empty
+    else
+      Using.resource(Files.list(tmp)) { s =>
+        s.iterator.asScala
+          .filter(Files.isRegularFile(_))
+          .map(p =>
+            TempArtifact(
+              p.getFileName.toString,
+              Files.getLastModifiedTime(p).toInstant,
+              Files.size(p)
+            )
+          )
+          .toVector
+      }
+  }
+
+  def deleteTempArtifact(bucket: BucketName, id: String): Future[Boolean] = Future {
+    val path = root.resolve(bucket.value).resolve(TmpDir).resolve(id).normalize()
+    if !path.startsWith(root.resolve(bucket.value).resolve(TmpDir).normalize()) then
+      throw BlobStoreException.InvalidReference(id)
+    Files.deleteIfExists(path)
+  }
 
   /** Report an operation's outcome + latency to the metrics sink. */
   private def recordOp(operation: String, result: Try[?], startNanos: Long): Unit =

@@ -100,8 +100,11 @@ it; the overwrite-reclaim is a pure best-effort improvement with no rollback con
 
 ## Open Questions
 
-- Grace-period default — 24h proposed; confirm against the intended backup cadence.
+- ~~Grace-period default~~ — **resolved**: purely config-driven (`BLOB_GC_GRACE`) with a modest
+  24h default, tuned per-environment at deploy.
+- ~~Trigger mechanism~~ — **resolved**: the admin HTTP endpoint (D56); a one-shot CLI runner is
+  deferred.
 - Whether the sweep should also verify a candidate's checksum before deleting (leaning no —
   identity is by `BlobRef`, and reading every candidate is expensive).
-- Whether to add a scheduled trigger now or leave it manual (leaning manual for v1, per the
-  reprocessing precedent).
+- Whether to add a scheduled trigger later (leaning manual-only for v1, per the reprocessing
+  precedent).

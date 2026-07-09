@@ -43,20 +43,45 @@ final class ObjectService(
       data: Source[ByteString, Any],
       expected: Option[Checksums]
   ): Future[CommitResult] =
-    blobStore.put(bucket, data, expected).flatMap { put =>
-      // The blob store knows the true byte count; record it authoritatively.
-      val command =
-        CommitObject(
-          name,
-          metadata.copy(sizeBytes = put.size),
-          put.checksums,
-          put.ref,
-          Instant.now()
-        )
-      entityFor(bucket)
-        .askWithStatus[Done](replyTo => BucketEntity.Execute(command, replyTo))
-        .map(_ => CommitResult(put.ref, put.checksums, put.size))
+    val entity = entityFor(bucket)
+    // Capture the entry this commit will supersede, so its blob can be reclaimed (D55).
+    entity.ask[Option[ObjectEntry]](replyTo => BucketEntity.GetObject(name, replyTo)).flatMap {
+      prior =>
+        blobStore.put(bucket, data, expected).flatMap { put =>
+          // The blob store knows the true byte count; record it authoritatively.
+          val command =
+            CommitObject(
+              name,
+              metadata.copy(sizeBytes = put.size),
+              put.checksums,
+              put.ref,
+              Instant.now()
+            )
+          entity
+            .askWithStatus[Done](replyTo => BucketEntity.Execute(command, replyTo))
+            .flatMap(_ =>
+              reclaimSuperseded(prior, put.ref)
+                .map(_ => CommitResult(put.ref, put.checksums, put.size))
+            )
+        }
     }
+
+  /**
+   * After an overwrite commits, delete the superseded generation's blob best-effort (design D55). A
+   * failed reclaim is logged and leaves an orphan (caught later by blob-gc), never failing the
+   * commit or touching the newly committed payload.
+   */
+  private def reclaimSuperseded(prior: Option[ObjectEntry], newRef: BlobRef): Future[Unit] =
+    prior.map(_.blob).filter(_ != newRef) match
+      case Some(oldRef) =>
+        blobStore.delete(oldRef).map(_ => ()).recover { case NonFatal(e) =>
+          log.warn(
+            "orphaned superseded blob {} — reclaim after overwrite failed: {}",
+            oldRef,
+            e.getMessage
+          )
+        }
+      case None => Future.unit
 
   /** Persist the deletion, then remove the payload best-effort. */
   def delete(bucket: BucketName, name: ObjectName): Future[Unit] =

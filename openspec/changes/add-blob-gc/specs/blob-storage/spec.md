@@ -10,7 +10,7 @@ reclaiming a superseded payload on overwrite.
 The blob store SHALL support enumerating the payloads it holds for a bucket — each as its
 `BlobRef` with a last-modified timestamp — and separately enumerating stale temp-write
 artifacts, so a reconciliation pass can compare on-disk payloads against live references.
-Enumeration SHALL stream (not require loading every reference into memory at once).
+Enumeration operates **per bucket**, so the whole store is never assembled at once.
 
 #### Scenario: Enumeration yields stored refs with ages
 - **GIVEN** a bucket with several stored payloads

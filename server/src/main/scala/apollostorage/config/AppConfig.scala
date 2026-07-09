@@ -31,6 +31,9 @@ final case class AuthConfig(enabled: Boolean, tokens: Seq[String])
 /** Prometheus metrics settings (design D40/D44); on by default, disableable. */
 final case class MetricsConfig(enabled: Boolean)
 
+/** Blob-gc settings (design D53/D56): the admin sweep, off by default, and the grace period. */
+final case class BlobGcConfig(enabled: Boolean, grace: FiniteDuration)
+
 object AppConfig:
   private val ConnectionFactory = "pekko.persistence.r2dbc.connection-factory"
 
@@ -71,6 +74,12 @@ object AppConfig:
 
   def metrics(config: Config): MetricsConfig =
     MetricsConfig(enabled = config.getBoolean("apollostorage.metrics.enabled"))
+
+  def blobGc(config: Config): BlobGcConfig =
+    BlobGcConfig(
+      enabled = config.getBoolean("apollostorage.blob-gc.enabled"),
+      grace = config.getDuration("apollostorage.blob-gc.grace").toMillis.millis
+    )
 
   def postgres(config: Config): PostgresConfig =
     val cf = config.getConfig(ConnectionFactory)
