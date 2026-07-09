@@ -10,6 +10,8 @@ on:
 
 env:
   IMAGE_NAME: apollostorage
+  # read:packages PAT to resolve the Lexicon gRPC artifact from GitHub Packages.
+  LEXICON_TOKEN: ${{ secrets.LEXICON_TOKEN }}
 
 jobs:
   release:

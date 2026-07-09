@@ -11,6 +11,12 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Read-only token for resolving the Lexicon gRPC artifact from GitHub Packages
+# (Maven reads need auth even for public packages; the built-in token can't read
+# another repo's package). Supply a read:packages PAT as the LEXICON_TOKEN secret.
+env:
+  LEXICON_TOKEN: ${{ secrets.LEXICON_TOKEN }}
+
 jobs:
   # Formatting is a separate job so a scalafmt violation fails independently of
   # the tests (a green test suite must not mask a format failure).
