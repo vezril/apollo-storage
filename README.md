@@ -436,14 +436,22 @@ overridable by environment variables — no secrets live in the repo or image.
 | `pekko.persistence.r2dbc.connection-factory.user`      | `POSTGRES_USER`           | `apollostorage`|
 | `pekko.persistence.r2dbc.connection-factory.password`  | `POSTGRES_PASSWORD`       | `apollostorage`|
 | `pekko.persistence.r2dbc.connection-factory.connect-timeout` | `POSTGRES_CONNECT_TIMEOUT` | `3 seconds` |
+| `apollostorage.db.auto-migrate`                        | `DB_AUTO_MIGRATE`         | `true`         |
 | `pekko.loglevel`                                       | `LOG_LEVEL`               | `INFO`         |
 
 ### Database schema
 
-The r2dbc plugin does not create its tables automatically. Apply
-[`ddl/create_tables_postgres.sql`](ddl/create_tables_postgres.sql) to your
-PostgreSQL database once (the compose file mounts it into Postgres' init
-directory automatically).
+ApolloStorage **creates its own schema at startup** — before it reports ready, it applies its
+bundled, idempotent DDL
+([`server/src/main/resources/ddl/create_tables_postgres.sql`](server/src/main/resources/ddl/create_tables_postgres.sql))
+against `POSTGRES_*`. A fresh PostgreSQL — in Compose, Kubernetes, or bare — just works; no
+external init step is needed. Re-applying the DDL is a no-op (`CREATE … IF NOT EXISTS`), and a
+migration failure aborts startup rather than serving a half-provisioned schema.
+
+Self-migration is on by default and controlled by `DB_AUTO_MIGRATE`. When enabled, the database
+user needs `CREATE TABLE` rights (true for a per-service Postgres it owns). Set
+`DB_AUTO_MIGRATE=false` to manage the schema externally (e.g. a DBA-run migration); the DDL is
+still shipped in the image and repo for that purpose.
 
 ## Versioning & branching
 

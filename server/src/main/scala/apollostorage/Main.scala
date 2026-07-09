@@ -20,7 +20,7 @@ import apollostorage.build.BuildInfo
 import apollostorage.config.AppConfig
 import apollostorage.http.{AdminRoutes, HealthRoutes, HttpServer, MetricsRoutes}
 import apollostorage.metrics.MetricsRegistry
-import apollostorage.persistence.{BucketSharding, PersistenceReadiness}
+import apollostorage.persistence.{BucketSharding, PersistenceMigration, PersistenceReadiness}
 import apollostorage.projection.{BucketProjection, ReadModelRepository}
 import com.typesafe.config.ConfigFactory
 import org.apache.pekko.actor.typed.scaladsl.Behaviors
@@ -142,13 +142,28 @@ object Main:
             system.terminate()
             System.exit(1)
           case Success(_) =>
-            PersistenceReadiness.check(AppConfig.postgres(config)).onComplete {
+            val pgCfg = AppConfig.postgres(config)
+            // Reachable → apply the schema (self-migration, D62-D66) → then serve.
+            val dbReady = PersistenceReadiness.check(pgCfg).flatMap { _ =>
+              if AppConfig.autoMigrate(config) then
+                PersistenceMigration
+                  .run(pgCfg)
+                  .recoverWith { case ex =>
+                    Future.failed(
+                      new RuntimeException(s"schema migration failed — ${ex.getMessage}", ex)
+                    )
+                  }
+              else
+                log.info("Schema auto-migration DISABLED — expecting a pre-provisioned database")
+                Future.unit
+            }
+            dbReady.onComplete {
               case Success(_) =>
                 startProjection(readModel, projectionInstances)
                 readiness.set(true)
                 log.info("Postgres + blob store ready — ApolloStorage is UP")
               case Failure(ex) =>
-                log.error(s"Postgres journal unreachable after retries — ${ex.getMessage}", ex)
+                log.error(s"Startup database step failed — ${ex.getMessage}", ex)
                 system.terminate()
                 System.exit(1)
             }

@@ -111,6 +111,10 @@ object AppConfig:
   def metrics(config: Config): MetricsConfig =
     MetricsConfig(enabled = config.getBoolean("apollostorage.metrics.enabled"))
 
+  /** Whether Apollo applies its schema at startup (design D65), env `DB_AUTO_MIGRATE`. */
+  def autoMigrate(config: Config): Boolean =
+    config.getBoolean("apollostorage.db.auto-migrate")
+
   def blobGc(config: Config): BlobGcConfig =
     BlobGcConfig(
       enabled = config.getBoolean("apollostorage.blob-gc.enabled"),
