@@ -1,11 +1,24 @@
 <configuration>
-  <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+  <!-- Log format toggle (add-structured-logging): the shipped image sets LOG_FORMAT=json for
+       machine-readable logs (Loki + the self-healing loop); a local `sbt run` defaults to text. -->
+  <property name="LOG_APPENDER" value="${LOG_FORMAT:-text}"/>
+
+  <appender name="text" class="ch.qos.logback.core.ConsoleAppender">
     <encoder>
       <pattern>%date{ISO8601} %-5level [%thread] %logger{36} - %msg%n</pattern>
     </encoder>
   </appender>
 
+  <!-- Constellation-wide JSON schema: LogstashEncoder emits @timestamp, level, logger_name,
+       thread_name, message, stack_trace (on error) + MDC as top-level fields; customFields adds
+       the shared `service` name. -->
+  <appender name="json" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+      <customFields>{"service":"apollo"}</customFields>
+    </encoder>
+  </appender>
+
   <root level="INFO">
-    <appender-ref ref="STDOUT"/>
+    <appender-ref ref="${LOG_APPENDER}"/>
   </root>
 </configuration>

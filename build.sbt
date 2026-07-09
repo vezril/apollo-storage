@@ -127,6 +127,8 @@ lazy val server = (project in file("server"))
       // Pekko forbids mixed artifact versions.
       "org.apache.pekko" %% "pekko-discovery" % pekkoVersion,
       "ch.qos.logback" % "logback-classic" % logbackVersion,
+      // Structured (JSON) logs for Loki + the self-healing loop (add-structured-logging).
+      "net.logstash.logback" % "logstash-logback-encoder" % "8.0",
       // test
       "org.apache.pekko" %% "pekko-actor-testkit-typed" % pekkoVersion % Test,
       "org.apache.pekko" %% "pekko-http-testkit" % pekkoHttpVersion % Test,
@@ -147,7 +149,7 @@ lazy val server = (project in file("server"))
     dockerUpdateLatest := false, // release workflow controls :latest explicitly
     Docker / packageName := "apollostorage",
     dockerExposedPorts := Seq(8080, 8443),
-    dockerEnvVars := Map("HTTP_PORT" -> "8080", "GRPC_PORT" -> "8443"),
+    dockerEnvVars := Map("HTTP_PORT" -> "8080", "GRPC_PORT" -> "8443", "LOG_FORMAT" -> "json"),
     // Non-root user (packager default UID 1001) + HEALTHCHECK against /health.
     Docker / daemonUserUid := Some("1001"),
     Docker / daemonUser := "apollo",
