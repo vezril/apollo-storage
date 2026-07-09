@@ -28,6 +28,25 @@ ThisBuild / scalacOptions ++= Seq(
   "-Yretain-trees"
 )
 
+// The Apollo gRPC contract is generated from the Lexicon, not a local .proto
+// (design adopt-lexicon-grpc-contracts, D46/D48). Resolve the published stubs from
+// GitHub Packages; auth with a read:packages token in LEXICON_TOKEN (or GITHUB_TOKEN),
+// supplied as a repo secret in CI. Maven reads of GitHub Packages need auth even for
+// public packages, and the built-in CI token cannot read another repo's package.
+ThisBuild / resolvers += "GitHub Packages — the-lexicon".at(
+  "https://maven.pkg.github.com/vezril/the-lexicon"
+)
+ThisBuild / credentials += Credentials(
+  "GitHub Package Registry",
+  "maven.pkg.github.com",
+  "vezril",
+  sys.env
+    .get("LEXICON_TOKEN")
+    .filter(_.nonEmpty)
+    .orElse(sys.env.get("GITHUB_TOKEN"))
+    .getOrElse("")
+)
+
 // Aligned so pekko-projection (which pulls pekko 1.2.x / r2dbc 1.1.x) does not
 // create a mixed-version classpath (Pekko forbids that).
 lazy val pekkoVersion = "1.2.0"
@@ -74,9 +93,10 @@ lazy val server = (project in file("server"))
   .settings(
     name := "apollostorage-server",
     Compile / mainClass := Some("apollostorage.Main"),
-    // Generate both the server powerapi and the client (client used by tests).
+    // The Apollo object API stubs come from the Lexicon artifact; the only .proto
+    // generated locally is the standard health service (design D47). The plugin
+    // stays enabled for health; power APIs keep parity with the Lexicon's codegen.
     pekkoGrpcGeneratedSources := Seq(PekkoGrpc.Server, PekkoGrpc.Client),
-    // Power APIs expose request metadata to handlers (for bearer-token auth, D35).
     pekkoGrpcCodeGeneratorSettings += "server_power_apis",
     libraryDependencies ++= Seq(
       "org.apache.pekko" %% "pekko-actor-typed" % pekkoVersion,
@@ -91,6 +111,9 @@ lazy val server = (project in file("server"))
       "org.apache.pekko" %% "pekko-persistence-typed" % pekkoVersion,
       "org.apache.pekko" %% "pekko-serialization-jackson" % pekkoVersion,
       "org.apache.pekko" %% "pekko-persistence-r2dbc" % pekkoR2dbcVersion,
+      // Apollo gRPC service stubs (server power API + client + messages), generated
+      // from the shared contract in the Lexicon (design D46). Pinned SemVer.
+      "io.codex" %% "lexicon-grpc" % "0.1.0",
       // Postgres r2dbc driver (transitive in r2dbc 1.0.0, explicit since 1.1.0).
       "org.postgresql" % "r2dbc-postgresql" % "1.0.7.RELEASE",
       // Prometheus metrics (design D40): app CollectorRegistry, JVM collectors, text exposition.
