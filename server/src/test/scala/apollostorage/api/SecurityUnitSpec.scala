@@ -1,6 +1,6 @@
 package apollostorage.api
 
-import apollostorage.config.{AuthConfig, TlsConfig}
+import apollostorage.config.{AuthConfig, Principal, Scope, TlsConfig}
 import io.grpc.Status
 import org.apache.pekko.grpc.GrpcServiceException
 import org.apache.pekko.grpc.scaladsl.Metadata
@@ -43,31 +43,57 @@ final class SecurityUnitSpec extends AnyWordSpec with Matchers:
   }
 
   "TokenAuthenticator" should {
-    val cfg = AuthConfig(enabled = true, tokens = Seq("s3cret-a", "s3cret-b"))
+    val cfg = AuthConfig(
+      enabled = true,
+      principals = Seq(Principal("read-tok", Scope.Read), Principal("write-tok", Scope.Write))
+    )
     val auth = new TokenAuthenticator(cfg)
 
-    "accept a valid bearer token" in {
-      auth.check(metadataWith(Some("Bearer s3cret-b"))) // no exception
+    "authorize a read token for a read operation" in {
+      auth.authorize(metadataWith(Some("Bearer read-tok")), Scope.Read) // no exception
+    }
+
+    "authorize a write token for read and write operations" in {
+      auth.authorize(metadataWith(Some("Bearer write-tok")), Scope.Read)
+      auth.authorize(metadataWith(Some("Bearer write-tok")), Scope.Write)
+    }
+
+    "reject a read token for a write operation with PERMISSION_DENIED" in {
+      val ex =
+        intercept[GrpcServiceException](
+          auth.authorize(metadataWith(Some("Bearer read-tok")), Scope.Write)
+        )
+      ex.status.getCode shouldBe Status.Code.PERMISSION_DENIED
     }
 
     "reject a missing token with UNAUTHENTICATED" in {
-      val ex = intercept[GrpcServiceException](auth.check(metadataWith(None)))
+      val ex = intercept[GrpcServiceException](auth.authorize(metadataWith(None), Scope.Read))
       ex.status.getCode shouldBe Status.Code.UNAUTHENTICATED
     }
 
-    "reject an invalid token with UNAUTHENTICATED" in {
-      val ex = intercept[GrpcServiceException](auth.check(metadataWith(Some("Bearer nope"))))
+    "reject an unknown token with UNAUTHENTICATED" in {
+      val ex =
+        intercept[GrpcServiceException](
+          auth.authorize(metadataWith(Some("Bearer nope")), Scope.Read)
+        )
       ex.status.getCode shouldBe Status.Code.UNAUTHENTICATED
     }
 
     "be a no-op when disabled" in {
-      new TokenAuthenticator(AuthConfig(enabled = false, tokens = Nil)).check(metadataWith(None))
+      new TokenAuthenticator(AuthConfig(enabled = false, principals = Nil))
+        .authorize(metadataWith(None), Scope.Write)
     }
 
-    "fail fast when enabled with no tokens" in {
+    "fail fast when enabled with no principals" in {
       intercept[IllegalStateException](
-        new TokenAuthenticator(AuthConfig(enabled = true, tokens = Nil))
+        new TokenAuthenticator(AuthConfig(enabled = true, principals = Nil))
       )
+    }
+
+    "authorize HTTP requests by scope (admin endpoint)" in {
+      auth.authorizeHttp(Some("Bearer write-tok"), Scope.Write) shouldBe AuthOutcome.Ok
+      auth.authorizeHttp(Some("Bearer read-tok"), Scope.Write) shouldBe AuthOutcome.Forbidden
+      auth.authorizeHttp(None, Scope.Write) shouldBe AuthOutcome.Unauthenticated
     }
   }
 
@@ -75,7 +101,7 @@ final class SecurityUnitSpec extends AnyWordSpec with Matchers:
     "warn when auth is enabled but TLS is disabled" in {
       val ws = SecurityWarnings.warnings(
         TlsConfig(enabled = false, "", ""),
-        AuthConfig(enabled = true, Seq("t"))
+        AuthConfig(enabled = true, Seq(Principal("t", Scope.Write)))
       )
       ws.exists(_.contains("bearer tokens travel in cleartext")) shouldBe true
     }
@@ -89,7 +115,7 @@ final class SecurityUnitSpec extends AnyWordSpec with Matchers:
     "be silent when both are enabled" in {
       SecurityWarnings.warnings(
         TlsConfig(enabled = true, "k", "p"),
-        AuthConfig(enabled = true, Seq("t"))
+        AuthConfig(enabled = true, Seq(Principal("t", Scope.Write)))
       ) shouldBe empty
     }
   }

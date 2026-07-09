@@ -1,5 +1,6 @@
 # Self-contained ApolloStorage deployment: the service + its PostgreSQL journal.
-# Postgres initializes the event-journal schema from ./ddl on first boot.
+# ApolloStorage creates its own schema at startup (self-migration), so a fresh
+# Postgres needs no init step.
 #
 #   docker compose up
 #   curl localhost:8080/health   # -> {"status":"UP",...}
@@ -15,7 +16,8 @@ services:
       POSTGRES_USER: apollostorage
       POSTGRES_PASSWORD: apollostorage
     volumes:
-      - ./ddl/create_tables_postgres.sql:/docker-entrypoint-initdb.d/10-schema.sql:ro
+      # No schema mount needed: ApolloStorage self-migrates its schema at startup
+      # (DB_AUTO_MIGRATE, default on). Set DB_AUTO_MIGRATE=false to manage it externally.
       - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U apollostorage -d apollostorage"]

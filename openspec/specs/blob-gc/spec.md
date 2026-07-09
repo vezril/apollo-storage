@@ -62,14 +62,15 @@ counted, never fatal, and the sweep reports what was actually reclaimed.
 
 The sweep SHALL be invocable only by an explicit administrative trigger (never automatically),
 exposed as an endpoint that is disabled by default and, when API authentication is enabled,
-requires a valid credential. The trigger SHALL return the sweep report.
+requires a valid **write**-scoped credential (the sweep is destructive). The trigger SHALL return
+the sweep report.
 
 #### Scenario: Sweep runs on demand and returns a report
-- **GIVEN** the admin trigger enabled
+- **GIVEN** the admin trigger enabled and a write-scoped credential (or auth disabled)
 - **WHEN** an operator invokes it
 - **THEN** the sweep runs and returns the report (scanned / orphaned / reclaimed / bytes)
 
-#### Scenario: Edge case — the trigger requires auth when auth is on
+#### Scenario: Edge case — the trigger rejects a read-scoped credential
 - **GIVEN** API authentication enabled
-- **WHEN** the admin trigger is invoked without a valid credential
-- **THEN** it is rejected, unauthenticated
+- **WHEN** the admin trigger is invoked with a read-scoped (or missing) credential
+- **THEN** it is rejected — `PERMISSION_DENIED` for a read token, unauthenticated for a missing one

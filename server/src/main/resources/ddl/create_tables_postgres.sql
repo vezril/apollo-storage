@@ -1,6 +1,9 @@
--- Canonical Pekko Persistence R2DBC (1.0.0) Postgres schema. The runtime plugin
--- does not auto-create tables; integration tests apply this before connecting.
--- Deployment applies the equivalent DDL out of band (documented in the README).
+-- Canonical Pekko Persistence R2DBC (1.0.0) Postgres schema — the single source of
+-- truth, bundled in the image and on the test classpath. Apollo applies this itself at
+-- startup (self-migration via DB_AUTO_MIGRATE, default on) and integration tests apply it too.
+-- All statements are idempotent (CREATE ... IF NOT EXISTS) so re-running is a no-op.
+-- NOTE the boot migrator splits on the statement terminator, so no statement may contain
+-- that character inside a string literal or comment.
 
 CREATE TABLE IF NOT EXISTS event_journal (
   slice INT NOT NULL,

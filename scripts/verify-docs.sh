@@ -7,7 +7,7 @@ set -euo pipefail
 fail() { echo "FAIL: $1"; exit 1; }
 
 echo "==> required files present"
-for f in README.md LICENSE docker-compose.yml ddl/create_tables_postgres.sql; do
+for f in README.md LICENSE docker-compose.yml server/src/main/resources/ddl/create_tables_postgres.sql; do
   [[ -f "$f" ]] || fail "missing $f"
 done
 

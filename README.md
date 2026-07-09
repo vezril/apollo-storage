@@ -178,12 +178,27 @@ your secret store — see the commented block in `docker-compose.yml`):
 | `TLS_KEYSTORE_PATH` | path to the mounted PKCS#12 keystore |
 | `TLS_KEYSTORE_PASSWORD` | keystore password (secret) |
 | `AUTH_ENABLED` | `true` to require a bearer token on every object RPC |
-| `AUTH_TOKENS` | comma-separated accepted tokens (secret) |
+| `AUTH_TOKENS` | comma-separated **full-access** (write) tokens (secret) |
+| `AUTH_PRINCIPALS` | comma-separated **scoped** tokens as `token:scope`, scope = `read`\|`write` (secret) |
 
-Misconfiguration fails fast: `AUTH_ENABLED=true` with no `AUTH_TOKENS`, or a missing
-/ wrong-password keystore, aborts startup with a clear error. Tokens are compared in
-constant time. The `grpc.health.v1.Health` service stays **unauthenticated** so
-orchestrators can probe it without a token.
+**Token scopes** — a token carries an operation scope: `read` (the read RPCs `GetObject`,
+`HeadObject`, `ListBuckets`, `ListObjects`) or `write` (which also permits reads, and covers
+`CreateBucket`, `DeleteBucket`, `PutObject`, `DeleteObject` **and** the `POST /admin/blob-gc`
+sweep). A read token presented to a write operation gets **`PERMISSION_DENIED`** (distinct from
+`UNAUTHENTICATED` for a missing/unknown token). Issue least-privilege tokens with
+`AUTH_PRINCIPALS`, e.g. a read-only backup token:
+
+```bash
+AUTH_PRINCIPALS="backup-ro:read,ingest-rw:write"
+```
+
+Tokens in `AUTH_PRINCIPALS` **must not contain `:`** (the scope delimiter). Entries in
+`AUTH_TOKENS` are treated as `write` (full access), so existing deployments are unchanged.
+
+Misconfiguration fails fast: `AUTH_ENABLED=true` with no tokens, a malformed `AUTH_PRINCIPALS`
+entry (unknown scope, or a `:` in a token), or a missing / wrong-password keystore, aborts
+startup with a clear error. Tokens are compared in constant time. The `grpc.health.v1.Health`
+service stays **unauthenticated** so orchestrators can probe it without a token.
 
 **3. Call the secured API** — trust the cert with `-cacert` and pass the token in an
 `authorization` header:
@@ -411,6 +426,7 @@ overridable by environment variables — no secrets live in the repo or image.
 | `apollostorage.tls.keystore-password`                  | `TLS_KEYSTORE_PASSWORD`   | _(none)_       |
 | `apollostorage.auth.enabled`                           | `AUTH_ENABLED`            | `false`        |
 | `apollostorage.auth.tokens`                            | `AUTH_TOKENS`             | _(none)_       |
+| `apollostorage.auth.principals`                        | `AUTH_PRINCIPALS`         | _(none)_       |
 | `apollostorage.metrics.enabled`                        | `METRICS_ENABLED`         | `true`         |
 | `apollostorage.blob-gc.enabled`                        | `BLOB_GC_ENABLED`         | `false`        |
 | `apollostorage.blob-gc.grace`                          | `BLOB_GC_GRACE`           | `24 hours`     |
@@ -420,14 +436,22 @@ overridable by environment variables — no secrets live in the repo or image.
 | `pekko.persistence.r2dbc.connection-factory.user`      | `POSTGRES_USER`           | `apollostorage`|
 | `pekko.persistence.r2dbc.connection-factory.password`  | `POSTGRES_PASSWORD`       | `apollostorage`|
 | `pekko.persistence.r2dbc.connection-factory.connect-timeout` | `POSTGRES_CONNECT_TIMEOUT` | `3 seconds` |
+| `apollostorage.db.auto-migrate`                        | `DB_AUTO_MIGRATE`         | `true`         |
 | `pekko.loglevel`                                       | `LOG_LEVEL`               | `INFO`         |
 
 ### Database schema
 
-The r2dbc plugin does not create its tables automatically. Apply
-[`ddl/create_tables_postgres.sql`](ddl/create_tables_postgres.sql) to your
-PostgreSQL database once (the compose file mounts it into Postgres' init
-directory automatically).
+ApolloStorage **creates its own schema at startup** — before it reports ready, it applies its
+bundled, idempotent DDL
+([`server/src/main/resources/ddl/create_tables_postgres.sql`](server/src/main/resources/ddl/create_tables_postgres.sql))
+against `POSTGRES_*`. A fresh PostgreSQL — in Compose, Kubernetes, or bare — just works; no
+external init step is needed. Re-applying the DDL is a no-op (`CREATE … IF NOT EXISTS`), and a
+migration failure aborts startup rather than serving a half-provisioned schema.
+
+Self-migration is on by default and controlled by `DB_AUTO_MIGRATE`. When enabled, the database
+user needs `CREATE TABLE` rights (true for a per-service Postgres it owns). Set
+`DB_AUTO_MIGRATE=false` to manage the schema externally (e.g. a DBA-run migration); the DDL is
+still shipped in the image and repo for that purpose.
 
 ## Versioning & branching
 

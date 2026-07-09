@@ -66,7 +66,7 @@ final class GrpcServerSpec
           store,
           entityFor,
           readModel,
-          TokenAuthenticator(apollostorage.config.AuthConfig(enabled = false, tokens = Nil))
+          TokenAuthenticator(apollostorage.config.AuthConfig(enabled = false, principals = Nil))
         )
       val ready = new AtomicBoolean(true)
 
