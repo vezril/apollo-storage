@@ -2,7 +2,7 @@ package apollostorage.http
 
 import apollostorage.api.TokenAuthenticator
 import apollostorage.blob.GcReport
-import apollostorage.config.AuthConfig
+import apollostorage.config.{AuthConfig, Principal, Scope}
 import org.apache.pekko.http.scaladsl.model.StatusCodes
 import org.apache.pekko.http.scaladsl.model.headers.RawHeader
 import org.apache.pekko.http.scaladsl.server.Route
@@ -40,7 +40,7 @@ final class AdminRoutesSpec extends AnyWordSpec with Matchers with ScalatestRout
       authenticator = auth
     )
 
-  private val open = new TokenAuthenticator(AuthConfig(enabled = false, tokens = Nil))
+  private val open = new TokenAuthenticator(AuthConfig(enabled = false, principals = Nil))
 
   "AdminRoutes.blobGc" should {
 
@@ -63,13 +63,21 @@ final class AdminRoutesSpec extends AnyWordSpec with Matchers with ScalatestRout
       }
     }
 
-    "require a valid bearer token when auth is enabled" in {
-      val secured = new TokenAuthenticator(AuthConfig(enabled = true, tokens = Seq("s3cret")))
+    "require a write-scoped token when auth is enabled" in {
+      val secured = new TokenAuthenticator(
+        AuthConfig(
+          enabled = true,
+          principals = Seq(Principal("readtok", Scope.Read), Principal("writetok", Scope.Write))
+        )
+      )
       val route = routeCapturing(secured, _ => ())
       // no token -> 401
       Post("/admin/blob-gc") ~> route ~> check(status shouldBe StatusCodes.Unauthorized)
-      // valid token -> 200
-      Post("/admin/blob-gc").withHeaders(RawHeader("authorization", "Bearer s3cret")) ~> route ~>
+      // read-scoped token -> 403 (the sweep is destructive)
+      Post("/admin/blob-gc").withHeaders(RawHeader("authorization", "Bearer readtok")) ~> route ~>
+        check(status shouldBe StatusCodes.Forbidden)
+      // write-scoped token -> 200
+      Post("/admin/blob-gc").withHeaders(RawHeader("authorization", "Bearer writetok")) ~> route ~>
         check(status shouldBe StatusCodes.OK)
     }
   }

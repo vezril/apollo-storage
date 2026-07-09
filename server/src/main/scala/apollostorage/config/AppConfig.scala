@@ -25,8 +25,26 @@ final case class PostgresConfig(
 /** TLS settings for the gRPC surface (design D34). */
 final case class TlsConfig(enabled: Boolean, keystorePath: String, keystorePassword: String)
 
-/** Bearer-token auth settings (design D35/D39); tokens are secrets. */
-final case class AuthConfig(enabled: Boolean, tokens: Seq[String])
+/** Operation scope a token grants (design D57). `Write` is a superset of `Read`. */
+enum Scope:
+  case Read, Write
+
+  /** Does a token with this scope satisfy an operation that requires `required`? */
+  def satisfies(required: Scope): Boolean = this match
+    case Scope.Write => true // write can read and write
+    case Scope.Read => required == Scope.Read
+
+object Scope:
+  def parse(s: String): Option[Scope] = s.trim.toLowerCase match
+    case "read" => Some(Read)
+    case "write" => Some(Write)
+    case _ => None
+
+/** A validated caller: a bearer token and the scope it grants (design D57/D59). */
+final case class Principal(token: String, scope: Scope)
+
+/** Bearer-token auth settings (design D35/D39/D57); tokens are secrets, each with a scope. */
+final case class AuthConfig(enabled: Boolean, principals: Seq[Principal])
 
 /** Prometheus metrics settings (design D40/D44); on by default, disableable. */
 final case class MetricsConfig(enabled: Boolean)
@@ -62,15 +80,33 @@ object AppConfig:
     )
 
   def auth(config: Config): AuthConfig =
+    // Legacy flat tokens are full-access (write) for back-compat (design D58).
+    val legacy = splitCsv(config.getString("apollostorage.auth.tokens"))
+      .map(Principal(_, Scope.Write))
+    // Scoped principals: comma-separated `token:scope`. Fail fast on a malformed entry (D61).
+    val scoped = splitCsv(config.getString("apollostorage.auth.principals")).map { entry =>
+      entry.split(":", -1) match
+        case Array(token, scopeStr) if token.nonEmpty =>
+          Scope
+            .parse(scopeStr)
+            .map(Principal(token, _))
+            .getOrElse(
+              throw new IllegalStateException(
+                s"invalid auth scope in principal '$entry' (use read|write)"
+              )
+            )
+        case _ =>
+          throw new IllegalStateException(
+            s"malformed auth principal '$entry' (expected token:scope, and a token may not contain ':')"
+          )
+    }
     AuthConfig(
       enabled = config.getBoolean("apollostorage.auth.enabled"),
-      tokens = config
-        .getString("apollostorage.auth.tokens")
-        .split(",")
-        .map(_.trim)
-        .filter(_.nonEmpty)
-        .toSeq
+      principals = legacy ++ scoped
     )
+
+  private def splitCsv(raw: String): Seq[String] =
+    raw.split(",").map(_.trim).filter(_.nonEmpty).toSeq
 
   def metrics(config: Config): MetricsConfig =
     MetricsConfig(enabled = config.getBoolean("apollostorage.metrics.enabled"))
