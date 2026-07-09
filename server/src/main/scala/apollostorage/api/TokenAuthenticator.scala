@@ -35,6 +35,19 @@ final class TokenAuthenticator(cfg: AuthConfig):
           Status.UNAUTHENTICATED.withDescription("missing or invalid bearer token")
         )
 
+  /**
+   * Authorize an HTTP request by its `Authorization` header value (design D56, reused for the admin
+   * endpoint). Returns `true` when auth is disabled, or when a valid `Bearer <token>` is present;
+   * `false` otherwise.
+   */
+  def authorizeBearer(header: Option[String]): Boolean =
+    if !cfg.enabled then true
+    else
+      header
+        .filter(_.regionMatches(true, 0, "Bearer ", 0, 7))
+        .map(_.substring(7).trim)
+        .exists(valid)
+
   private def valid(token: String): Boolean =
     val bytes = token.getBytes(UTF_8)
     tokenBytes.exists(expected => MessageDigest.isEqual(expected, bytes))

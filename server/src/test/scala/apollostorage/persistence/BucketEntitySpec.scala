@@ -84,4 +84,32 @@ final class BucketEntitySpec
         .asInstanceOf[Event.ObjectCommitted]
         .generation shouldBe Generation.unsafe(2)
     }
+
+    "answer GetLiveBlobRefs with the current generations' blob refs, persisting nothing" in {
+      val kit = newKit
+      kit.runCommand[StatusReply[Done]](rt => BucketEntity.Execute(CreateBucket(bucket, now), rt))
+      kit.runCommand[StatusReply[Done]](rt =>
+        BucketEntity.Execute(CommitObject(obj, meta, sums, BlobRef("blob://a1"), now), rt)
+      )
+      kit.runCommand[StatusReply[Done]](rt =>
+        BucketEntity
+          .Execute(
+            CommitObject(ObjectName.unsafe("b.txt"), meta, sums, BlobRef("blob://b1"), now),
+            rt
+          )
+      )
+      // Overwrite a.txt: only the latest generation is live (blob://a1 becomes an orphan).
+      kit.runCommand[StatusReply[Done]](rt =>
+        BucketEntity.Execute(CommitObject(obj, meta, sums, BlobRef("blob://a2"), now), rt)
+      )
+      val res = kit.runCommand[Set[BlobRef]](rt => BucketEntity.GetLiveBlobRefs(rt))
+      res.reply shouldBe Set(BlobRef("blob://a2"), BlobRef("blob://b1"))
+      res.events shouldBe empty
+    }
+
+    "answer GetLiveBlobRefs with an empty set for an empty bucket" in {
+      val res = newKit.runCommand[Set[BlobRef]](rt => BucketEntity.GetLiveBlobRefs(rt))
+      res.reply shouldBe empty
+      res.events shouldBe empty
+    }
   }
