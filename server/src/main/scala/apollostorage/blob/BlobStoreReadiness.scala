@@ -2,8 +2,8 @@ package apollostorage.blob
 
 import java.nio.file.{Files, Path}
 import java.util.UUID
-import scala.util.{Failure, Try}
 import scala.util.control.NonFatal
+import scala.util.{Failure, Try}
 
 /**
  * Startup readiness for the blob store (design D14). Verifies the root exists, is a directory, and
@@ -24,7 +24,7 @@ object BlobStoreReadiness:
         Files.createFile(probe)
         Files.delete(probe)
       }.recoverWith { case NonFatal(e) =>
-        Try(Files.deleteIfExists(probe))
+        val _ = Try(Files.deleteIfExists(probe))
         Failure(
           new IllegalStateException(s"blob store root is not writable: $root (${e.getMessage})")
         )

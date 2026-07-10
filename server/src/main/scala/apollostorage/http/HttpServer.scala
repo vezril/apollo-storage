@@ -41,5 +41,5 @@ object HttpServer:
       readiness.set(false)
       Future.successful(Done)
     }
-    binding.addToCoordinatedShutdown(hardTerminationDeadline = 10.seconds)
+    val _ = binding.addToCoordinatedShutdown(hardTerminationDeadline = 10.seconds)
     ()

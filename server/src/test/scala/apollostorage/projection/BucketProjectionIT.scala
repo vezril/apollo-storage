@@ -6,7 +6,6 @@ import apollostorage.domain.Command.*
 import apollostorage.persistence.BucketEntity
 import com.dimafeng.testcontainers.{ForAllTestContainer, PostgreSQLContainer}
 import com.typesafe.config.{Config, ConfigFactory}
-import org.testcontainers.utility.DockerImageName
 import org.apache.pekko.Done
 import org.apache.pekko.actor.testkit.typed.scaladsl.ActorTestKit
 import org.apache.pekko.actor.typed.ActorRef
@@ -17,6 +16,7 @@ import org.scalatest.concurrent.{Eventually, ScalaFutures}
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.time.{Millis, Seconds, Span}
 import org.scalatest.wordspec.AnyWordSpec
+import org.testcontainers.utility.DockerImageName
 
 import java.sql.DriverManager
 import java.time.Instant
@@ -67,7 +67,8 @@ final class BucketProjectionIT
     testKit = ActorTestKit("apollo-proj", config())
     repo = new ReadModelRepository(pgConfig)(using testKit.system.executionContext)
 
-  override def beforeStop(): Unit = if testKit != null then testKit.shutdownTestKit()
+  override def beforeStop(): Unit =
+    if testKit != null then testKit.shutdownTestKit() // scalafix:ok DisableSyntax
 
   private def pgConfig = PostgresConfig(
     container.host,

@@ -4,16 +4,13 @@ import apollostorage.blob.{FileSystemBlobStore, ObjectService}
 import apollostorage.config.PostgresConfig
 import apollostorage.domain.BucketName
 import apollostorage.grpc.*
-import apollostorage.persistence.{BucketEntity, BucketSharding}
+import apollostorage.persistence.BucketEntity
 import apollostorage.projection.{BucketProjection, ReadModelRepository}
 import com.dimafeng.testcontainers.{ForAllTestContainer, PostgreSQLContainer}
 import com.google.protobuf.ByteString as ProtoBytes
 import com.typesafe.config.{Config, ConfigFactory}
 import io.grpc.{Status, StatusRuntimeException}
-import org.testcontainers.utility.DockerImageName
 import org.apache.pekko.actor.testkit.typed.scaladsl.ActorTestKit
-import org.apache.pekko.actor.typed.ActorRef
-import org.apache.pekko.actor.typed.scaladsl.AskPattern.*
 import org.apache.pekko.grpc.GrpcClientSettings
 import org.apache.pekko.http.scaladsl.Http
 import org.apache.pekko.projection.ProjectionBehavior
@@ -24,9 +21,9 @@ import org.scalatest.concurrent.{Eventually, ScalaFutures}
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.time.{Millis, Seconds, Span}
 import org.scalatest.wordspec.AnyWordSpec
+import org.testcontainers.utility.DockerImageName
 
 import java.sql.DriverManager
-import scala.concurrent.Future
 import scala.concurrent.duration.*
 import scala.io.Source as IoSource
 import scala.util.Using
@@ -100,7 +97,8 @@ final class ObjectApiListingIT
         .withTls(false)
     )
 
-  override def beforeStop(): Unit = if testKit != null then testKit.shutdownTestKit()
+  override def beforeStop(): Unit =
+    if testKit != null then testKit.shutdownTestKit() // scalafix:ok DisableSyntax
 
   private def pgConfig =
     PostgresConfig(

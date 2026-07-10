@@ -46,7 +46,7 @@ final class ObjectServiceSpec
     entityFor = b => BucketSharding.entityRef(sharding, b)
 
   override protected def afterAll(): Unit =
-    if root != null then
+    if root != null then // scalafix:ok DisableSyntax
       Files
         .walk(root)
         .sorted(Comparator.reverseOrder())

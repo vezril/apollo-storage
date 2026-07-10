@@ -1,9 +1,9 @@
 package apollostorage.domain
 
-import org.scalatest.matchers.should.Matchers
-import org.scalatest.wordspec.AnyWordSpec
 import apollostorage.domain.Command.*
 import apollostorage.domain.Event.*
+import org.scalatest.matchers.should.Matchers
+import org.scalatest.wordspec.AnyWordSpec
 
 import java.time.Instant
 

@@ -1,27 +1,25 @@
 package apollostorage.persistence
 
+import apollostorage.blob.{FileSystemBlobStore, ObjectService}
 import apollostorage.domain.*
 import apollostorage.domain.Command.*
 import com.dimafeng.testcontainers.{ForAllTestContainer, PostgreSQLContainer}
 import com.typesafe.config.{Config, ConfigFactory}
-import org.testcontainers.utility.DockerImageName
 import org.apache.pekko.Done
 import org.apache.pekko.actor.testkit.typed.scaladsl.ActorTestKit
 import org.apache.pekko.pattern.StatusReply
+import org.apache.pekko.stream.scaladsl.Source as StreamSource
+import org.apache.pekko.util.{ByteString, Timeout}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.concurrent.ScalaFutures
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.time.{Millis, Seconds, Span}
 import org.scalatest.wordspec.AnyWordSpec
-
-import apollostorage.blob.{FileSystemBlobStore, ObjectService}
-import org.apache.pekko.stream.scaladsl.Source as StreamSource
-import org.apache.pekko.util.{ByteString, Timeout}
+import org.testcontainers.utility.DockerImageName
 
 import java.nio.file.{Files, Path}
 import java.sql.DriverManager
 import java.time.Instant
-import scala.concurrent.Future
 import scala.concurrent.duration.*
 import scala.io.Source
 import scala.util.Using
@@ -64,7 +62,7 @@ final class BucketPersistenceIT
     blobStore = FileSystemBlobStore(blobRoot)(using testKit.system)
 
   override def beforeStop(): Unit =
-    if testKit != null then testKit.shutdownTestKit()
+    if testKit != null then testKit.shutdownTestKit() // scalafix:ok DisableSyntax
 
   private def config(): Config =
     ConfigFactory

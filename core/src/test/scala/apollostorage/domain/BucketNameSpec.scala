@@ -1,9 +1,9 @@
 package apollostorage.domain
 
+import org.scalacheck.Gen
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
 import org.scalatestplus.scalacheck.ScalaCheckPropertyChecks
-import org.scalacheck.Gen
 
 final class BucketNameSpec extends AnyWordSpec with Matchers with ScalaCheckPropertyChecks:
 

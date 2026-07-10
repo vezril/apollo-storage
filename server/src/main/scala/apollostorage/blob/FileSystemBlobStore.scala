@@ -12,8 +12,8 @@ import java.util.UUID
 import java.util.zip.CRC32C
 import scala.concurrent.{ExecutionContext, Future}
 import scala.jdk.CollectionConverters.*
-import scala.util.{Try, Using}
 import scala.util.control.NonFatal
+import scala.util.{Try, Using}
 
 /**
  * Filesystem/NFS-backed blob store. Writes are crash-safe (temp file → fsync → atomic rename,

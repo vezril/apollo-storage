@@ -15,14 +15,13 @@ import apollostorage.grpc.*
 import apollostorage.persistence.BucketEntity
 import com.google.protobuf.ByteString as ProtoBytes
 import io.grpc.Status
-import org.apache.pekko.NotUsed
-import org.apache.pekko.Done
 import org.apache.pekko.actor.typed.scaladsl.AskPattern.*
 import org.apache.pekko.actor.typed.{ActorSystem, RecipientRef, Scheduler}
 import org.apache.pekko.grpc.GrpcServiceException
 import org.apache.pekko.grpc.scaladsl.Metadata
 import org.apache.pekko.stream.scaladsl.{Sink, Source}
 import org.apache.pekko.util.{ByteString, Timeout}
+import org.apache.pekko.{Done, NotUsed}
 
 import java.time.Instant
 import scala.concurrent.{ExecutionContext, Future}

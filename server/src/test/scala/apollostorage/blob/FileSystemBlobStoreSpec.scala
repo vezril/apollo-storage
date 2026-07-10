@@ -29,7 +29,7 @@ final class FileSystemBlobStoreSpec
     store = FileSystemBlobStore(root)
 
   override protected def afterAll(): Unit =
-    if root != null then
+    if root != null then // scalafix:ok DisableSyntax
       Files
         .walk(root)
         .sorted(Comparator.reverseOrder())

@@ -4,20 +4,18 @@ import apollostorage.domain.*
 import apollostorage.domain.Command.*
 import com.dimafeng.testcontainers.{ForAllTestContainer, PostgreSQLContainer}
 import com.typesafe.config.{Config, ConfigFactory}
-import org.testcontainers.utility.DockerImageName
 import org.apache.pekko.Done
 import org.apache.pekko.actor.testkit.typed.scaladsl.ActorTestKit
-import org.apache.pekko.actor.typed.scaladsl.AskPattern.*
 import org.apache.pekko.cluster.MemberStatus
 import org.apache.pekko.cluster.sharding.typed.scaladsl.ClusterSharding
 import org.apache.pekko.cluster.typed.{Cluster, Join}
-import org.apache.pekko.pattern.StatusReply
 import org.apache.pekko.util.Timeout
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.concurrent.{Eventually, ScalaFutures}
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.time.{Millis, Seconds, Span}
 import org.scalatest.wordspec.AnyWordSpec
+import org.testcontainers.utility.DockerImageName
 
 import java.sql.DriverManager
 import java.time.Instant
@@ -74,7 +72,8 @@ final class BucketShardingIT
     eventually(cluster.selfMember.status shouldBe MemberStatus.Up)
     sharding = BucketSharding.init(testKit.system)
 
-  override def beforeStop(): Unit = if testKit != null then testKit.shutdownTestKit()
+  override def beforeStop(): Unit =
+    if testKit != null then testKit.shutdownTestKit() // scalafix:ok DisableSyntax
 
   private def config(): Config =
     ConfigFactory

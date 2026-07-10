@@ -8,10 +8,7 @@ import com.google.protobuf.ByteString as ProtoBytes
 import com.typesafe.config.ConfigFactory
 import io.grpc.{Status, StatusRuntimeException}
 import org.apache.pekko.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
-import org.apache.pekko.actor.typed.ActorRef
-import org.apache.pekko.actor.typed.scaladsl.AskPattern.*
-import org.apache.pekko.grpc.{GrpcClientSettings, GrpcServiceException}
-import org.apache.pekko.grpc.scaladsl.ServiceHandler
+import org.apache.pekko.grpc.GrpcClientSettings
 import org.apache.pekko.http.scaladsl.Http
 import org.apache.pekko.http.scaladsl.model.{HttpRequest, HttpResponse}
 import org.apache.pekko.stream.scaladsl.{Sink, Source}
@@ -77,7 +74,7 @@ final class ObjectApiSpec
     )
 
   override protected def afterAll(): Unit =
-    if root != null then
+    if root != null then // scalafix:ok DisableSyntax
       Files
         .walk(root)
         .sorted(Comparator.reverseOrder())
@@ -89,8 +86,7 @@ final class ObjectApiSpec
   // --- helpers ---------------------------------------------------------------
 
   private def codeOf(t: Throwable): Status.Code = t match
-    case e: StatusRuntimeException => e.getStatus.getCode
-    case e: GrpcServiceException => e.status.getCode
+    case e: StatusRuntimeException => e.getStatus.getCode // also covers GrpcServiceException
     case other => throw other
 
   private def putSource(

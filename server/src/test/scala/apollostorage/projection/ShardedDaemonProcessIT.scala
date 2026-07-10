@@ -7,7 +7,6 @@ import apollostorage.domain.Command.*
 import apollostorage.persistence.{BucketEntity, BucketSharding}
 import com.dimafeng.testcontainers.{ForAllTestContainer, PostgreSQLContainer}
 import com.typesafe.config.{Config, ConfigFactory}
-import org.testcontainers.utility.DockerImageName
 import org.apache.pekko.Done
 import org.apache.pekko.actor.testkit.typed.scaladsl.ActorTestKit
 import org.apache.pekko.cluster.sharding.typed.scaladsl.{ClusterSharding, ShardedDaemonProcess}
@@ -18,6 +17,7 @@ import org.scalatest.concurrent.{Eventually, ScalaFutures}
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.time.{Millis, Seconds, Span}
 import org.scalatest.wordspec.AnyWordSpec
+import org.testcontainers.utility.DockerImageName
 
 import java.sql.DriverManager
 import java.time.Instant
@@ -82,7 +82,8 @@ final class ShardedDaemonProcessIT
       stopMessage = ProjectionBehavior.Stop
     )
 
-  override def beforeStop(): Unit = if testKit != null then testKit.shutdownTestKit()
+  override def beforeStop(): Unit =
+    if testKit != null then testKit.shutdownTestKit() // scalafix:ok DisableSyntax
 
   private def pgConfig =
     PostgresConfig(
