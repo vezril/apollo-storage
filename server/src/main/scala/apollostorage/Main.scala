@@ -23,11 +23,11 @@ import apollostorage.metrics.MetricsRegistry
 import apollostorage.persistence.{BucketSharding, PersistenceMigration, PersistenceReadiness}
 import apollostorage.projection.{BucketProjection, ReadModelRepository}
 import com.typesafe.config.ConfigFactory
-import org.apache.pekko.actor.typed.scaladsl.Behaviors
 import org.apache.pekko.actor.typed.ActorSystem
-import org.apache.pekko.http.scaladsl.server.Directives.*
+import org.apache.pekko.actor.typed.scaladsl.Behaviors
 import org.apache.pekko.cluster.sharding.typed.scaladsl.ShardedDaemonProcess
 import org.apache.pekko.http.scaladsl.Http.ServerBinding
+import org.apache.pekko.http.scaladsl.server.Directives.*
 import org.apache.pekko.management.cluster.bootstrap.ClusterBootstrap
 import org.apache.pekko.management.scaladsl.PekkoManagement
 import org.apache.pekko.projection.ProjectionBehavior
@@ -62,7 +62,7 @@ object Main:
     given Timeout = Timeout(10.seconds)
 
     // Cluster formation and entity hosting.
-    PekkoManagement(system).start()
+    val _ = PekkoManagement(system).start()
     ClusterBootstrap(system).start()
     val sharding = BucketSharding.init(system)
     def entityFor(bucket: apollostorage.domain.BucketName) =
@@ -129,7 +129,7 @@ object Main:
     bindings.onComplete {
       case Success((httpBinding, grpcBinding)) =>
         HttpServer.wireShutdown(httpBinding, readiness)
-        grpcBinding.addToCoordinatedShutdown(10.seconds)
+        val _ = grpcBinding.addToCoordinatedShutdown(10.seconds)
         log.info(
           "ApolloStorage {} bound HTTP :{} and gRPC :{}; checking dependencies…",
           BuildInfo.version,

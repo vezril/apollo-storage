@@ -1,0 +1,13 @@
+version: 2
+updates:
+  # Keep the GitHub Actions used by the workflows up to date (also clears the
+  # recurring Node-20 deprecation warnings). NOTE: Dependabot has no `sbt`
+  # ecosystem — Scala/sbt dependency version-updates are handled by Scala Steward
+  # (a separate follow-up), not here; GitHub's Dependabot *security alerts* still
+  # cover the sbt dependency graph.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci"

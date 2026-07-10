@@ -2,11 +2,11 @@ package apollostorage.projection
 
 import apollostorage.config.PostgresConfig
 import com.dimafeng.testcontainers.{ForAllTestContainer, PostgreSQLContainer}
-import org.testcontainers.utility.DockerImageName
 import org.scalatest.concurrent.ScalaFutures
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.time.{Millis, Seconds, Span}
 import org.scalatest.wordspec.AnyWordSpec
+import org.testcontainers.utility.DockerImageName
 
 import java.sql.DriverManager
 import java.time.Instant

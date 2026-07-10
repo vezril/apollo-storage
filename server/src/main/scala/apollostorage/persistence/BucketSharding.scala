@@ -23,7 +23,7 @@ object BucketSharding:
   /** Initialize sharding on the cluster and return the handle. */
   def init(system: ActorSystem[?]): ClusterSharding =
     val sharding = ClusterSharding(system)
-    sharding.init(Entity(TypeKey)(ctx => BucketEntity(BucketName.unsafe(ctx.entityId))))
+    val _ = sharding.init(Entity(TypeKey)(ctx => BucketEntity(BucketName.unsafe(ctx.entityId))))
     sharding
 
   def entityRef(sharding: ClusterSharding, bucket: BucketName): EntityRef[BucketEntity.Command] =

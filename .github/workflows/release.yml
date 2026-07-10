@@ -71,6 +71,19 @@ jobs:
       - name: Build image
         run: sbt -batch Docker/publishLocal
 
+      - name: Resolve version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV" # local image tag is X.Y.Z (no 'v')
+
+      # Scan the built image before publishing — block the release on a fixable CRITICAL CVE
+      # (static-analysis). Unfixable base-image CVEs are ignored so they don't wedge releases.
+      - name: Scan image for CVEs (Trivy)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:${{ env.VERSION }}
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
       - name: Tag and push X.Y.Z + latest
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}

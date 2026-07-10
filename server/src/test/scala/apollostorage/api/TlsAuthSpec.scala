@@ -1,7 +1,7 @@
 package apollostorage.api
 
 import apollostorage.blob.{FileSystemBlobStore, ObjectService}
-import apollostorage.config.{AuthConfig, Principal, PostgresConfig, Scope, TlsConfig}
+import apollostorage.config.{AuthConfig, PostgresConfig, Principal, Scope, TlsConfig}
 import apollostorage.domain.BucketName
 import apollostorage.grpc.{CreateBucketRequest, HeadObjectRequest, ObjectApiClient}
 import apollostorage.persistence.{BucketEntity, BucketSharding}

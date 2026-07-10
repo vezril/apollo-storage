@@ -20,8 +20,6 @@ final class BlobEnumerationSpec
     with Matchers
     with ScalaFutures:
 
-  private given scala.concurrent.ExecutionContext = system.executionContext
-
   private def newStore(): (FileSystemBlobStore, Path) =
     val root = Files.createTempDirectory("apollo-enum")
     (FileSystemBlobStore(root), root)
@@ -44,7 +42,7 @@ final class BlobEnumerationSpec
       val r2 = put(store, "alpha", "two")
       val stored = store.listStoredBlobs(BucketName.unsafe("alpha")).futureValue
       stored.map(_.ref).toSet shouldBe Set(r1.ref, r2.ref)
-      stored.foreach(_.modifiedAt should not be null)
+      stored.foreach(_.modifiedAt should not be null) // scalafix:ok DisableSyntax
     }
 
     "list temp-write artifacts separately and delete them" in {

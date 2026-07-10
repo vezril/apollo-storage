@@ -10,6 +10,9 @@ addSbtPlugin("org.scalameta" % "sbt-scalafmt" % "2.5.4")
 // Static analysis / linting.
 addSbtPlugin("ch.epfl.scala" % "sbt-scalafix" % "0.13.0")
 
+// Test coverage reporting (static-analysis). Reported in CI, not gated yet.
+addSbtPlugin("org.scoverage" % "sbt-scoverage" % "2.1.1")
+
 // Build-time version info exposed to the app (health endpoint reports version).
 addSbtPlugin("com.eed3si9n" % "sbt-buildinfo" % "0.13.1")
 

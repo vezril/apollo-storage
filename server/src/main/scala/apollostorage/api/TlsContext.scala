@@ -32,5 +32,6 @@ object TlsContext:
     val kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm)
     kmf.init(keyStore, password)
     val sslContext = SSLContext.getInstance("TLS")
-    sslContext.init(kmf.getKeyManagers, null, new SecureRandom)
+    // null trust managers = the JVM defaults (standard SSLContext.init contract).
+    sslContext.init(kmf.getKeyManagers, null, new SecureRandom) // scalafix:ok DisableSyntax
     ConnectionContext.httpsServer(sslContext)

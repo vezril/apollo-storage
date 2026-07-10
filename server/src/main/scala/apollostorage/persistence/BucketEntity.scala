@@ -5,11 +5,11 @@ import apollostorage.domain.{
   BucketDomain,
   BucketName,
   BucketState,
+  Command as DomainCommand,
   DomainException,
   Event,
   ObjectEntry,
-  ObjectName,
-  Command as DomainCommand
+  ObjectName
 }
 import org.apache.pekko.Done
 import org.apache.pekko.actor.typed.{ActorRef, Behavior}

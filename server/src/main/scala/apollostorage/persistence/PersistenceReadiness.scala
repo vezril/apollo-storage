@@ -62,8 +62,8 @@ object PersistenceReadiness:
   private def toFuture[A](mono: Mono[A]): Future[A] =
     val promise = Promise[A]()
     mono.subscribe(
-      (value: A) => { promise.trySuccess(value); () },
-      (err: Throwable) => { promise.tryFailure(err); () }
+      (value: A) => { val _ = promise.trySuccess(value) },
+      (err: Throwable) => { val _ = promise.tryFailure(err) }
     )
     promise.future
 
@@ -76,7 +76,8 @@ object PersistenceReadiness:
       new java.util.TimerTask:
         def run(): Unit =
           thunk.onComplete { result =>
-            promise.tryComplete(result); timer.cancel()
+            val _ = promise.tryComplete(result)
+            timer.cancel()
           }
       ,
       delay.toMillis

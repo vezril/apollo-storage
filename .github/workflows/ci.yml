@@ -39,8 +39,29 @@ jobs:
       - uses: ./.github/actions/setup-scala
       - name: Compile
         run: sbt -batch compile Test/compile
-      - name: Test (unit + integration)
-        run: sbt -batch test # testcontainers uses the runner's Docker daemon
+      - name: Scalafix (check) # enforce DisableSyntax / OrganizeImports as a gate
+        run: sbt -batch "scalafixAll --check"
+      - name: Test with coverage # testcontainers uses the runner's Docker daemon
+        run: sbt -batch coverage test coverageReport # coverage reported, not gated (yet)
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scoverage-report
+          path: "**/target/scala-*/scoverage-report/**"
+          if-no-files-found: warn
+
+  # Secret scanning over the repo + history (static-analysis).
+  secret-scan:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # scan the full history, not just the tip
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # Documentation checklist: referenced files/links resolve and badges point at
   # real workflows (documentation spec).
