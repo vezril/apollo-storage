@@ -3,6 +3,7 @@ package apollostorage
 import apollostorage.api.{
   GrpcMetrics,
   GrpcServer,
+  GrpcTracing,
   HealthServiceImpl,
   ObjectApiImpl,
   SecurityWarnings,
@@ -18,7 +19,7 @@ import apollostorage.blob.{
 }
 import apollostorage.build.BuildInfo
 import apollostorage.config.AppConfig
-import apollostorage.http.{AdminRoutes, HealthRoutes, HttpServer, MetricsRoutes}
+import apollostorage.http.{AdminRoutes, HealthRoutes, HttpServer, MetricsRoutes, RequestTracing}
 import apollostorage.metrics.MetricsRegistry
 import apollostorage.persistence.{BucketSharding, PersistenceMigration, PersistenceReadiness}
 import apollostorage.projection.{BucketProjection, ReadModelRepository}
@@ -111,10 +112,15 @@ object Main:
     )
 
     val healthRoutes = HealthRoutes(BuildInfo.version, () => readiness.get())
-    val httpRoutes =
+    // Mint a correlation id per request, MDC it, access-log, and echo X-Correlation-Id (request-tracing).
+    val httpRoutes = RequestTracing.withCorrelationId {
       (metrics.map(MetricsRoutes.apply).toList ++ adminRoutes.toList).foldLeft(healthRoutes)(_ ~ _)
+    }
     val grpcHandlerRaw = GrpcServer.handler(objectApi, health)
-    val grpcHandler = metrics.fold(grpcHandlerRaw)(m => GrpcMetrics.instrument(grpcHandlerRaw, m))
+    val grpcMetered = metrics.fold(grpcHandlerRaw)(m => GrpcMetrics.instrument(grpcHandlerRaw, m))
+    // Tracing is outermost: it mints the id and stamps request metadata before metrics/handler run,
+    // and adds x-correlation-id to the response (request-tracing capability).
+    val grpcHandler = GrpcTracing.instrument(grpcMetered)
     log.info(
       "Metrics {} (GET /metrics on the HTTP port)",
       if metricsCfg.enabled then "ENABLED" else "DISABLED"
