@@ -18,7 +18,13 @@
     </encoder>
   </appender>
 
-  <root level="INFO">
+  <!-- Verbosity knobs (request-tracing): LOG_LEVEL sets the root (third-party libs — pekko, netty,
+       r2dbc), while LOG_LEVEL_APOLLO independently sets Apollo's own code. So LOG_LEVEL_APOLLO=TRACE
+       lights up Apollo's request/trace logs (including the per-request access lines) without drowning
+       in third-party TRACE noise. Both default to INFO. -->
+  <logger name="apollostorage" level="${LOG_LEVEL_APOLLO:-INFO}"/>
+
+  <root level="${LOG_LEVEL:-INFO}">
     <appender-ref ref="${LOG_APPENDER}"/>
   </root>
 </configuration>
