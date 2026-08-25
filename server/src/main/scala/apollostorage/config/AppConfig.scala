@@ -52,6 +52,33 @@ final case class MetricsConfig(enabled: Boolean)
 /** Blob-gc settings (design D53/D56): the admin sweep, off by default, and the grace period. */
 final case class BlobGcConfig(enabled: Boolean, grace: FiniteDuration)
 
+/** Which blob backend serves object payloads (add-s3-backend-and-rest-api). */
+enum BlobBackend:
+  case Filesystem, S3
+
+object BlobBackend:
+  def parse(s: String): Option[BlobBackend] = s.trim.toLowerCase match
+    case "filesystem" | "file" | "fs" => Some(Filesystem)
+    case "s3" => Some(S3)
+    case _ => None
+
+/**
+ * S3/QuObjects connection for the `s3` blob backend (add-s3-backend-and-rest-api). Credentials are
+ * secrets supplied via env — never defaulted in source. `tlsInsecure` is a LAN-only escape hatch
+ * for a self-signed/hostname-mismatched endpoint; prefer a `truststore` in production.
+ */
+final case class S3Config(
+    endpoint: String,
+    region: String,
+    bucket: String,
+    pathStyle: Boolean,
+    accessKey: String,
+    secretKey: String,
+    tlsInsecure: Boolean,
+    truststorePath: String,
+    truststorePassword: String
+)
+
 object AppConfig:
   private val ConnectionFactory = "pekko.persistence.r2dbc.connection-factory"
 
@@ -63,10 +90,36 @@ object AppConfig:
 
   /**
    * Root directory for object payloads (blob store), env-overridable via `BLOB_STORE_PATH` (design
-   * D8/D14).
+   * D8/D14). Applies to the filesystem backend.
    */
   def blobRoot(config: Config): Path =
     Path.of(config.getString("apollostorage.blob.root"))
+
+  /**
+   * Which blob backend to use, env-overridable via `BLOB_BACKEND` (add-s3-backend-and-rest-api).
+   */
+  def blobBackend(config: Config): BlobBackend =
+    val raw = config.getString("apollostorage.blob.backend")
+    BlobBackend
+      .parse(raw)
+      .getOrElse(
+        throw new IllegalStateException(s"invalid BLOB_BACKEND '$raw' (use filesystem|s3)")
+      )
+
+  /** S3 connection for the `s3` blob backend; credentials come from env/secrets, not source. */
+  def s3(config: Config): S3Config =
+    val c = config.getConfig("apollostorage.blob.s3")
+    S3Config(
+      endpoint = c.getString("endpoint"),
+      region = c.getString("region"),
+      bucket = c.getString("bucket"),
+      pathStyle = c.getBoolean("path-style"),
+      accessKey = c.getString("access-key"),
+      secretKey = c.getString("secret-key"),
+      tlsInsecure = c.getBoolean("tls-insecure"),
+      truststorePath = c.getString("truststore-path"),
+      truststorePassword = c.getString("truststore-password")
+    )
 
   /** gRPC bind port, env-overridable via `GRPC_PORT` (design D17). */
   def grpcPort(config: Config): Int =

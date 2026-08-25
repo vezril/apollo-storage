@@ -1,0 +1,142 @@
+openapi: 3.0.3
+info:
+  title: ApolloStorage REST object API
+  version: "1.0"
+  description: >-
+    Plain RESTful bucket/object API served on the HTTP port alongside the gRPC ObjectApi
+    (add-s3-backend-and-rest-api). A thin adapter over the same event-sourced core, so REST and gRPC
+    share generations, checksums, and effects. Object metadata rides as `X-Apollo-*` response headers;
+    bucket/list operations return JSON. When auth is enabled, a Bearer token is required — write scope
+    for mutations, read scope for reads.
+servers:
+  - url: http://localhost:8080
+    description: HTTP listener (cleartext on the LAN; TLS when TLS_ENABLED=true)
+security:
+  - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    Error:
+      type: object
+      properties:
+        code: { type: string, example: OBJECT_NOT_FOUND }
+        message: { type: string }
+        correlationId: { type: string, description: The request's X-Correlation-Id }
+    BucketList:
+      type: object
+      properties:
+        buckets: { type: array, items: { type: string } }
+        nextPageToken: { type: string }
+    ObjectEntry:
+      type: object
+      properties:
+        object: { type: string }
+        generation: { type: integer, format: int64 }
+        size: { type: integer, format: int64 }
+        contentType: { type: string }
+        crc32c: { type: string }
+        md5: { type: string }
+    ObjectList:
+      type: object
+      properties:
+        objects: { type: array, items: { $ref: '#/components/schemas/ObjectEntry' } }
+        nextPageToken: { type: string }
+  headers:
+    XApolloGeneration: { schema: { type: integer, format: int64 }, description: Object generation }
+    XApolloSize: { schema: { type: integer, format: int64 }, description: Object size in bytes }
+    XApolloCrc32c: { schema: { type: string } }
+    XApolloMd5: { schema: { type: string } }
+  responses:
+    NotFound:
+      description: Bucket or object not found
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Unauthorized: { description: Missing or unknown bearer token }
+    Forbidden: { description: Token scope insufficient for the operation }
+paths:
+  /v1/buckets:
+    get:
+      summary: List buckets
+      parameters:
+        - { name: pageSize, in: query, schema: { type: integer } }
+        - { name: pageToken, in: query, schema: { type: string } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/BucketList' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/buckets/{bucket}:
+    parameters:
+      - { name: bucket, in: path, required: true, schema: { type: string } }
+    put:
+      summary: Create a bucket
+      responses:
+        '201': { description: Created }
+        '409': { description: Bucket already exists, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    delete:
+      summary: Delete a bucket
+      responses:
+        '204': { description: Deleted }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/buckets/{bucket}/objects:
+    parameters:
+      - { name: bucket, in: path, required: true, schema: { type: string } }
+    get:
+      summary: List objects (read model; eventually consistent)
+      parameters:
+        - { name: prefix, in: query, schema: { type: string } }
+        - { name: pageSize, in: query, schema: { type: integer } }
+        - { name: pageToken, in: query, schema: { type: string } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ObjectList' } } } }
+  /v1/buckets/{bucket}/objects/{object}:
+    parameters:
+      - { name: bucket, in: path, required: true, schema: { type: string } }
+      - { name: object, in: path, required: true, schema: { type: string }, description: May contain '/' }
+    put:
+      summary: Upload an object (raw request body)
+      requestBody:
+        required: true
+        content: { application/octet-stream: { schema: { type: string, format: binary } } }
+      parameters:
+        - { name: X-Apollo-Crc32c, in: header, schema: { type: string }, description: Expected crc32c (with X-Apollo-Md5, enforced) }
+        - { name: X-Apollo-Md5, in: header, schema: { type: string } }
+      responses:
+        '201':
+          description: Created
+          headers:
+            X-Apollo-Generation: { $ref: '#/components/headers/XApolloGeneration' }
+            X-Apollo-Size: { $ref: '#/components/headers/XApolloSize' }
+            X-Apollo-Crc32c: { $ref: '#/components/headers/XApolloCrc32c' }
+            X-Apollo-Md5: { $ref: '#/components/headers/XApolloMd5' }
+          content: { application/json: { schema: { $ref: '#/components/schemas/ObjectEntry' } } }
+        '412': { description: Expected-checksum mismatch, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    get:
+      summary: Download an object (raw response body)
+      responses:
+        '200':
+          description: OK
+          headers:
+            X-Apollo-Generation: { $ref: '#/components/headers/XApolloGeneration' }
+            X-Apollo-Size: { $ref: '#/components/headers/XApolloSize' }
+            X-Apollo-Crc32c: { $ref: '#/components/headers/XApolloCrc32c' }
+            X-Apollo-Md5: { $ref: '#/components/headers/XApolloMd5' }
+          content: { application/octet-stream: { schema: { type: string, format: binary } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+    head:
+      summary: Object metadata as headers (no body)
+      responses:
+        '200':
+          description: OK
+          headers:
+            X-Apollo-Generation: { $ref: '#/components/headers/XApolloGeneration' }
+            X-Apollo-Size: { $ref: '#/components/headers/XApolloSize' }
+            X-Apollo-Crc32c: { $ref: '#/components/headers/XApolloCrc32c' }
+            X-Apollo-Md5: { $ref: '#/components/headers/XApolloMd5' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      summary: Delete an object
+      responses:
+        '204': { description: Deleted }
+        '404': { $ref: '#/components/responses/NotFound' }
