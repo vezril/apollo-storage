@@ -13,16 +13,16 @@ import apollostorage.domain.{
 }
 import apollostorage.grpc.*
 import apollostorage.persistence.BucketEntity
+import apollostorage.tracing.{CorrelationId, MdcPropagatingExecutionContext}
 import com.google.protobuf.ByteString as ProtoBytes
-import io.grpc.Status
 import org.apache.pekko.NotUsed
 import org.apache.pekko.Done
 import org.apache.pekko.actor.typed.scaladsl.AskPattern.*
 import org.apache.pekko.actor.typed.{ActorSystem, RecipientRef, Scheduler}
-import org.apache.pekko.grpc.GrpcServiceException
 import org.apache.pekko.grpc.scaladsl.Metadata
 import org.apache.pekko.stream.scaladsl.{Sink, Source}
 import org.apache.pekko.util.{ByteString, Timeout}
+import org.slf4j.{LoggerFactory, MDC}
 
 import java.time.Instant
 import scala.concurrent.{ExecutionContext, Future}
@@ -41,8 +41,12 @@ final class ObjectApiImpl(
 )(using system: ActorSystem[?], timeout: Timeout)
     extends ObjectApiPowerApi:
 
-  private given ExecutionContext = system.executionContext
+  // The propagating EC carries the request's `correlationId` (set in the MDC by `guarded`) across
+  // every Future hop, so deep TRACE/DEBUG logs stay correlated (request-tracing capability).
+  private given ExecutionContext = MdcPropagatingExecutionContext(system.executionContext)
   private given Scheduler = system.scheduler
+
+  private val log = LoggerFactory.getLogger(getClass)
 
   // --- bucket lifecycle ------------------------------------------------------
 
@@ -70,6 +74,7 @@ final class ObjectApiImpl(
       in.prefixAndTail(1).runWith(Sink.head).flatMap { case (prefix, tail) =>
         prefix.headOption.map(_.payload) match
           case Some(PutObjectRequest.Payload.Header(header)) =>
+            log.debug(s"put object ${header.bucket}/${header.`object`} (${header.contentType})")
             val chunks = tail.map(_.payload).collect { case PutObjectRequest.Payload.Chunk(b) =>
               ByteString.fromArrayUnsafe(b.toByteArray)
             }
@@ -91,37 +96,41 @@ final class ObjectApiImpl(
               size = result.size
             )
           case _ =>
-            Future.failed(
-              new GrpcServiceException(
-                Status.INVALID_ARGUMENT.withDescription("first PutObject message must be a header")
-              )
-            )
+            Future.failed(DomainStatus.invalidArgument("first PutObject message must be a header"))
       }
     }
 
   // --- object download & metadata --------------------------------------------
 
   def getObject(in: GetObjectRequest, metadata: Metadata): Source[GetObjectResponse, NotUsed] =
-    val stream = Future.unit.flatMap { _ =>
-      authenticator.authorize(metadata, Scope.Read)
-      for
-        bucket <- bucketName(in.bucket)
-        name <- objectName(in.`object`)
-        entry <- lookup(bucket, name)
-        opened <- blobStore.get(entry.blob)
-      yield opened match
-        case None =>
-          Source.failed(
-            new GrpcServiceException(Status.INTERNAL.withDescription("blob missing on disk"))
-          )
-        case Some(bytes) =>
-          val header = GetObjectResponse(
-            GetObjectResponse.Payload.Header(metadataMessage(in.bucket, in.`object`, entry))
-          )
-          Source
-            .single(header)
-            .concat(bytes.map(b => GetObjectResponse(GetObjectResponse.Payload.Chunk(toProto(b)))))
-    }
+    // getObject returns a Source (not routed through `guarded`), so establish the correlation id in
+    // the MDC here; the propagating EC captures it as the stream-building Future is scheduled, then
+    // we clear it from this boundary thread so nothing leaks to the next request.
+    MDC.put(CorrelationId.MdcKey, correlationId(metadata))
+    val stream =
+      try
+        Future.unit.flatMap { _ =>
+          authenticator.authorize(metadata, Scope.Read)
+          log.debug(s"get object ${in.bucket}/${in.`object`}")
+          for
+            bucket <- bucketName(in.bucket)
+            name <- objectName(in.`object`)
+            entry <- lookup(bucket, name)
+            opened <- blobStore.get(entry.blob)
+          yield opened match
+            case None =>
+              Source.failed(DomainStatus.internal("blob missing on disk"))
+            case Some(bytes) =>
+              val header = GetObjectResponse(
+                GetObjectResponse.Payload.Header(metadataMessage(in.bucket, in.`object`, entry))
+              )
+              Source
+                .single(header)
+                .concat(
+                  bytes.map(b => GetObjectResponse(GetObjectResponse.Payload.Chunk(toProto(b))))
+                )
+        }
+      finally MDC.remove(CorrelationId.MdcKey)
     Source
       .futureSource(stream.recover { case t => Source.failed(DomainStatus.fromThrowable(t)) })
       .mapMaterializedValue(_ => NotUsed)
@@ -168,13 +177,27 @@ final class ObjectApiImpl(
 
   // --- helpers ---------------------------------------------------------------
 
-  /** Authorize the required scope, then run the body; any failure maps to a gRPC status. */
+  /**
+   * Establish the request's correlation id in the MDC, authorize the required scope, then run the
+   * body; any failure maps to a gRPC status. The id is set on this boundary thread (so the
+   * propagating EC captures it for the body's async hops) and removed here afterward so it does not
+   * leak to the next request handled on this thread.
+   */
   private def guarded[A](metadata: Metadata, required: Scope)(body: => Future[A]): Future[A] =
-    Future.unit
-      .flatMap { _ =>
-        authenticator.authorize(metadata, required); body
-      }
-      .recoverWith(mapFailure)
+    MDC.put(CorrelationId.MdcKey, correlationId(metadata))
+    try
+      Future.unit
+        .flatMap { _ =>
+          authenticator.authorize(metadata, required)
+          log.debug(s"authorized request (required scope $required)")
+          body
+        }
+        .recoverWith(mapFailure)
+    finally MDC.remove(CorrelationId.MdcKey)
+
+  /** The correlation id stamped onto the request by the boundary decorator, or a fresh fallback. */
+  private def correlationId(metadata: Metadata): String =
+    metadata.getText(CorrelationId.MetadataKey).getOrElse(CorrelationId.mint())
 
   private def pageSize(requested: Int): Int =
     if requested <= 0 then 100 else math.min(requested, 1000)
@@ -196,6 +219,7 @@ final class ObjectApiImpl(
     ObjectName.from(raw).fold(e => Future.failed(DomainStatus.exceptionFor(e)), Future.successful)
 
   private def execute(bucket: BucketName, command: apollostorage.domain.Command): Future[Done] =
+    log.trace(s"dispatch ${command.getClass.getSimpleName} to bucket ${bucket.value}")
     entityFor(bucket).askWithStatus[Done](replyTo => BucketEntity.Execute(command, replyTo))
 
   private def lookup(bucket: BucketName, name: ObjectName): Future[ObjectEntry] =
