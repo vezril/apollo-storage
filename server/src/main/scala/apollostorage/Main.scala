@@ -13,13 +13,23 @@ import apollostorage.api.{
 import apollostorage.blob.{
   BlobGc,
   BlobMetrics,
+  BlobStore,
   BlobStoreReadiness,
   FileSystemBlobStore,
-  ObjectService
+  ObjectService,
+  S3BlobStore
 }
 import apollostorage.build.BuildInfo
-import apollostorage.config.AppConfig
-import apollostorage.http.{AdminRoutes, HealthRoutes, HttpServer, MetricsRoutes, RequestTracing}
+import apollostorage.config.{AppConfig, BlobBackend}
+import apollostorage.http.{
+  AdminRoutes,
+  HealthRoutes,
+  HttpServer,
+  LiveObjectOperations,
+  MetricsRoutes,
+  ObjectRoutes,
+  RequestTracing
+}
 import apollostorage.metrics.MetricsRegistry
 import apollostorage.persistence.{BucketSharding, PersistenceMigration, PersistenceReadiness}
 import apollostorage.projection.{BucketProjection, ReadModelRepository}
@@ -84,7 +94,21 @@ object Main:
         def addBytes(direction: String, n: Long): Unit = m.addBytes(direction, n)
     )
 
-    val blobStore = FileSystemBlobStore(blobRoot, blobMetrics)
+    // Select the blob backend (add-s3-backend-and-rest-api). The filesystem backend keeps the disk
+    // readiness probe; the S3 backend ensures its bucket then verifies reachability.
+    val (blobStore, blobReadiness): (BlobStore, () => Future[Unit]) =
+      AppConfig.blobBackend(config) match
+        case BlobBackend.Filesystem =>
+          log.info("Blob backend: filesystem ({})", blobRoot)
+          (
+            FileSystemBlobStore(blobRoot, blobMetrics),
+            () => Future.fromTry(BlobStoreReadiness.check(blobRoot))
+          )
+        case BlobBackend.S3 =>
+          val s3Cfg = AppConfig.s3(config)
+          log.info("Blob backend: s3 (endpoint {}, bucket {})", s3Cfg.endpoint, s3Cfg.bucket)
+          val s = S3BlobStore(s3Cfg, blobMetrics)
+          (s, () => s.ensureBucket().flatMap(_ => s.checkReadiness()))
     val objectService = ObjectService(blobStore, entityFor)
     val readModel = new ReadModelRepository(AppConfig.postgres(config))
 
@@ -112,9 +136,17 @@ object Main:
     )
 
     val healthRoutes = HealthRoutes(BuildInfo.version, () => readiness.get())
+    // The REST object API (add-s3-backend-and-rest-api): a second adapter over the same core as
+    // gRPC, mounted on the HTTP listener under the tracing directive (correlation ids + access logs).
+    val restRoutes =
+      ObjectRoutes(
+        LiveObjectOperations(objectService, blobStore, entityFor, readModel),
+        authenticator
+      )
     // Mint a correlation id per request, MDC it, access-log, and echo X-Correlation-Id (request-tracing).
     val httpRoutes = RequestTracing.withCorrelationId {
-      (metrics.map(MetricsRoutes.apply).toList ++ adminRoutes.toList).foldLeft(healthRoutes)(_ ~ _)
+      (restRoutes :: metrics.map(MetricsRoutes.apply).toList ++ adminRoutes.toList)
+        .foldLeft(healthRoutes)(_ ~ _)
     }
     val grpcHandlerRaw = GrpcServer.handler(objectApi, health)
     val grpcMetered = metrics.fold(grpcHandlerRaw)(m => GrpcMetrics.instrument(grpcHandlerRaw, m))
@@ -128,7 +160,7 @@ object Main:
 
     val bindings: Future[(ServerBinding, ServerBinding)] =
       for
-        httpBinding <- HttpServer.bind(httpRoutes, http.host, http.port)
+        httpBinding <- HttpServer.bind(httpRoutes, http.host, http.port, httpsContext)
         grpcBinding <- GrpcServer.bind(grpcHandler, http.host, grpcPort, httpsContext)
       yield (httpBinding, grpcBinding)
 
@@ -142,37 +174,33 @@ object Main:
           Integer.valueOf(httpBinding.localAddress.getPort),
           Integer.valueOf(grpcBinding.localAddress.getPort)
         )
-        BlobStoreReadiness.check(blobRoot) match
+        // Blob store ready → Postgres reachable → apply the schema (D62-D66) → then serve.
+        val startup = blobReadiness().flatMap { _ =>
+          val pgCfg = AppConfig.postgres(config)
+          PersistenceReadiness.check(pgCfg).flatMap { _ =>
+            if AppConfig.autoMigrate(config) then
+              PersistenceMigration
+                .run(pgCfg)
+                .recoverWith { case ex =>
+                  Future.failed(
+                    new RuntimeException(s"schema migration failed — ${ex.getMessage}", ex)
+                  )
+                }
+            else
+              log.info("Schema auto-migration DISABLED — expecting a pre-provisioned database")
+              Future.unit
+          }
+        }
+        startup.onComplete {
+          case Success(_) =>
+            startProjection(readModel, projectionInstances)
+            readiness.set(true)
+            log.info("Postgres + blob store ready — ApolloStorage is UP")
           case Failure(ex) =>
-            log.error(s"Blob store not ready — ${ex.getMessage}", ex)
+            log.error(s"Startup dependency not ready — ${ex.getMessage}", ex)
             system.terminate()
             System.exit(1)
-          case Success(_) =>
-            val pgCfg = AppConfig.postgres(config)
-            // Reachable → apply the schema (self-migration, D62-D66) → then serve.
-            val dbReady = PersistenceReadiness.check(pgCfg).flatMap { _ =>
-              if AppConfig.autoMigrate(config) then
-                PersistenceMigration
-                  .run(pgCfg)
-                  .recoverWith { case ex =>
-                    Future.failed(
-                      new RuntimeException(s"schema migration failed — ${ex.getMessage}", ex)
-                    )
-                  }
-              else
-                log.info("Schema auto-migration DISABLED — expecting a pre-provisioned database")
-                Future.unit
-            }
-            dbReady.onComplete {
-              case Success(_) =>
-                startProjection(readModel, projectionInstances)
-                readiness.set(true)
-                log.info("Postgres + blob store ready — ApolloStorage is UP")
-              case Failure(ex) =>
-                log.error(s"Startup database step failed — ${ex.getMessage}", ex)
-                system.terminate()
-                System.exit(1)
-            }
+        }
       case Failure(ex) =>
         log.error(s"Failed to bind (HTTP :${http.port} / gRPC :$grpcPort) — ${ex.getMessage}", ex)
         system.terminate()
