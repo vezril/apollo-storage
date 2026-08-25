@@ -131,6 +131,10 @@ lazy val server = (project in file("server"))
       // Align pekko-discovery (pulled transitively by pekko-grpc) with pekkoVersion;
       // Pekko forbids mixed artifact versions.
       "org.apache.pekko" %% "pekko-discovery" % pekkoVersion,
+      // The kubernetes-api discovery implementation for Cluster Bootstrap in k8s
+      // (DISCOVERY_METHOD=kubernetes-api). Without it, Bootstrap throws at startup — local/compose
+      // use the `config` method so this path was never exercised until the first k8s deploy.
+      "org.apache.pekko" %% "pekko-discovery-kubernetes-api" % pekkoManagementVersion,
       "ch.qos.logback" % "logback-classic" % logbackVersion,
       // Structured (JSON) logs for Loki + the self-healing loop (add-structured-logging).
       "net.logstash.logback" % "logstash-logback-encoder" % "8.0",
