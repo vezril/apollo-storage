@@ -147,6 +147,34 @@ grpcurl -plaintext -d '{}' localhost:8443 grpc.health.v1.Health/Check
 > authentication — fine for a trusted homelab LAN. To encrypt the transport and
 > require bearer tokens, see **Securing the API** below.
 
+## REST object API
+
+Alongside gRPC, a plain RESTful API is served on the HTTP port (`HTTP_PORT`) under `/v1/` — a second
+adapter over the same event-sourced core, so REST and gRPC share generations, checksums, and effects.
+It is the easy path for browsers, `curl`, and tooling. Full contract:
+[`docs/rest-api.openapi.yaml`](docs/rest-api.openapi.yaml).
+
+Object uploads/downloads stream the raw HTTP body; object metadata rides as `X-Apollo-*` response
+headers; bucket and listing operations return JSON. Scoped bearer auth and the `X-Correlation-Id`
+tracing header apply here too.
+
+```bash
+# create a bucket
+curl -X PUT localhost:8080/v1/buckets/media
+
+# upload an object (raw body); metadata comes back as X-Apollo-* headers
+curl -X PUT --data-binary @photo.jpg -H 'Content-Type: image/jpeg' \
+  localhost:8080/v1/buckets/media/objects/photos/cat.jpg
+
+# download it back, and list by prefix
+curl localhost:8080/v1/buckets/media/objects/photos/cat.jpg -o cat.jpg
+curl 'localhost:8080/v1/buckets/media/objects?prefix=photos/'
+```
+
+> Like gRPC, REST is cleartext on the LAN by default. Because it now carries object bytes and bearer
+> tokens, enabling `TLS_ENABLED=true` serves **both** the gRPC and HTTP listeners over TLS — keep REST
+> LAN-only unless TLS is on (see **Securing the API**).
+
 ## Securing the API
 
 TLS and token authentication are **opt-in and default off**. When disabled the

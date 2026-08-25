@@ -108,6 +108,11 @@ lazy val server = (project in file("server"))
       "org.apache.pekko" %% "pekko-management-cluster-http" % pekkoManagementVersion,
       "org.apache.pekko" %% "pekko-http" % pekkoHttpVersion,
       "org.apache.pekko" %% "pekko-http-spray-json" % pekkoHttpVersion,
+      // S3 blob backend (add-s3-backend-and-rest-api): Alpakka S3, pinned to pekko 1.2.x. It
+      // transitively pulls pekko-http-xml 1.1.0, so pin that to pekkoHttpVersion too — otherwise
+      // Pekko's no-mixed-versions guard fails at runtime (spike-verified).
+      "org.apache.pekko" %% "pekko-connectors-s3" % "1.2.0",
+      "org.apache.pekko" %% "pekko-http-xml" % pekkoHttpVersion,
       "org.apache.pekko" %% "pekko-persistence-typed" % pekkoVersion,
       "org.apache.pekko" %% "pekko-serialization-jackson" % pekkoVersion,
       "org.apache.pekko" %% "pekko-persistence-r2dbc" % pekkoR2dbcVersion,

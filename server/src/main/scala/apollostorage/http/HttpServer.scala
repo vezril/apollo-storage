@@ -5,6 +5,7 @@ import org.apache.pekko.actor.CoordinatedShutdown
 import org.apache.pekko.actor.typed.ActorSystem
 import org.apache.pekko.http.scaladsl.Http
 import org.apache.pekko.http.scaladsl.Http.ServerBinding
+import org.apache.pekko.http.scaladsl.HttpsConnectionContext
 import org.apache.pekko.http.scaladsl.server.Route
 
 import java.util.concurrent.atomic.AtomicBoolean
@@ -19,14 +20,19 @@ object HttpServer:
 
   /**
    * Attempt to bind. The returned Future fails fast if the port is unavailable (see service-runtime
-   * spec: occupied port ⇒ fast failure). Callers decide exit semantics.
+   * spec: occupied port ⇒ fast failure). Callers decide exit semantics. When an
+   * `HttpsConnectionContext` is supplied the listener serves TLS — so the REST object API's bytes
+   * and bearer tokens are protected in transit consistent with the gRPC surface
+   * (add-s3-backend-and-rest-api).
    */
   def bind(
       routes: Route,
       host: String,
-      port: Int
+      port: Int,
+      https: Option[HttpsConnectionContext] = None
   )(using system: ActorSystem[?]): Future[ServerBinding] =
-    Http()(system).newServerAt(host, port).bind(routes)
+    val server = Http()(system).newServerAt(host, port)
+    https.fold(server)(server.enableHttps).bind(routes)
 
   /**
    * Register readiness withdrawal (before unbind) and the binding's own unbind + terminate tasks
