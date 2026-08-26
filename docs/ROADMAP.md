@@ -111,7 +111,13 @@ cache-stampede protection.
 **Recommendation:** start with a **bounded in-process LRU** for small hot blobs; graduate to **Redis**
 only when multi-replica sharing or the §2.1 counters justify the dependency.
 
-**Depends on:** §2.1 (temperature-aware eviction) · optional Redis infra (Codex/GitOps).
+> **Codex push-back (2026-08-25):** at homelab volume, in-process LRU + Postgres counters likely **never
+> saturate** — hold Redis behind a *measured* need, and the plausible trigger is the §2.1 access counters,
+> **not caching**. A small Redis (single pod, local-path PVC, ~64–128Mi) deploys fine when warranted;
+> just don't add it speculatively.
+
+**Depends on:** §2.1 (temperature-aware eviction) · optional Redis infra (Codex/GitOps — only when a
+measured need appears).
 
 ### 2.4 Duplicate detection 🔧
 
@@ -132,31 +138,41 @@ content is currently stored **twice**.
 
 **Depends on:** §3.2 content-hash index (detection) → content-addressed storage + refcounting (dedup).
 
-### 2.5 Similar-image detection (Hephaestus) 🌐🔬
+### 2.5 Similar-image detection 🌐
 
 Beyond *exact* duplicates: perceptually **similar** images (resized, re-encoded, cropped, watermarked).
-This is image *understanding* — squarely **Hephaestus's** domain (the media-processing service) — and
-ties to the existing design-backlog "find-similar" and "ML auto-tagging" threads.
 
-**Pipeline:** on image upload, Apollo emits a lifecycle event (via **HermesMQ**, using the
-request-tracing/correlation envelope) → **Hephaestus** computes a **perceptual hash** (pHash/dHash) and/or
-an **embedding** (e.g. CLIP) → stores it in a similarity index → "find similar" queries by Hamming
-distance (pHash) or vector ANN (embeddings).
+> **Reality check (Codex feasibility read, 2026-08-25): the near-duplicate half is already built and
+> deployed.** Hephaestus v0.4.0 computes a **perceptual hash for every processed media** (MediaPipeline →
+> `PerceptualHash.compute`) and publishes it in `MediaProcessed`. **Artemis** stores `posts.phash`, flags
+> near-dupes at ingest (`DEDUP_HAMMING_THRESHOLD`, default 10), and already serves
+> **`GET /posts/{id}/similar`** and **`GET /similar?phash=`** (Hamming-ranked, live on Artemis 1.1.1).
+> So near-dupe "find similar" is **a UI surface away, not a pipeline build.**
+
+**Two halves, very different effort:**
+
+1. **Near-duplicate (pHash) — ✅ backend done.** The pipeline (Hephaestus) and the query API (Artemis
+   `/similar`) exist and are deployed. Remaining work is purely a **UI surface**: a "Find similar" action
+   → grid of Hamming-ranked matches. Note this lives naturally in **Artemis's** UI (posts) as much as
+   Apollo's — decide where the surface belongs (Apollo objects vs Artemis posts).
+2. **Semantic similarity (embeddings) — 🔬 net-new.** "Looks like" (not just near-dupe) needs image
+   **embeddings** (e.g. CLIP) + a vector index. Per Codex: **CLIP inference belongs in ARGUS** (the
+   Python ML-tagger — model-serving is its domain), *not* Hephaestus (JVM/ffmpeg). Index = **pgvector**,
+   but the in-cluster `postgres:16-alpine` lacks the extension → swap to `pgvector/pgvector:pg16` on a
+   pg-service or a dedicated instance (a contained change).
 
 **Design notes / open questions**
-- **pHash vs embeddings:** pHash is cheap and catches near-dupes (recompress/resize/crop); embeddings
-  catch *semantic* similarity but need a vector store. Likely both: pHash for near-dupes, embeddings for
-  "looks like".
-- **Index:** `pgvector` (reuse Postgres) vs a dedicated vector DB (Qdrant/Milvus). Start with pgvector.
-- **Where hashes live:** Hephaestus-owned store, or written back to Apollo's catalog? Contract via
-  **the-lexicon** (a hash/embedding message + a find-similar RPC).
-- Backfill for existing images vs new-uploads-only.
+- Where does the "find similar" surface live — Apollo's object console, Artemis's post UI, or both?
+- Embeddings: backfill existing media vs new-uploads-only; which model (CLIP variant) and dimension.
+- The `MediaProcessed` message **already carries `phash`**, so the hash contract partly exists; net-new
+  lexicon work is the **embedding message + a find-similar RPC**.
 
-**UI surface:** a **"Find similar"** action on an image object → grid of near-matches with similarity
-scores; plus a **Similar groups** view.
+**Depends on:** near-dupe surface → nothing new (Artemis `/similar` is live). Semantic → 🌐 **Argus**
+(CLIP) · pgvector extension · the-lexicon (embedding + find-similar RPC).
 
-**Depends on:** 🌐 Hephaestus · HermesMQ · a vector/pHash index · the-lexicon contract. The largest,
-most cross-service item — sequence it last.
+> **Design-backlog overlap:** Codex notes this whole area overlaps Calvin's July design backlog
+> (find-similar, reprocessing, ML auto-tagging — parked "explore one at a time" threads). Sequence with
+> those in mind.
 
 ---
 
@@ -169,21 +185,37 @@ Build these first; each unlocks several capabilities.
    tiering (§2.1), temperature-aware cache eviction (§2.3).
 2. **§3.2 Content-hash index** — index the existing `md5`/`crc32c` (add `sha256` if destructive).
    **Unlocks:** duplicate detection report (§2.4), then content-addressed dedup + refcounting.
-3. **§3.3 Object-lifecycle events on HermesMQ** — emit put/delete/overwrite events (reusing the
-   correlation-ID envelope already standardized). **Unlocks:** async workers for compression (§2.2),
-   hashing, and the Hephaestus similar-image pipeline (§2.5); also the activity/audit feed view.
-4. **§3.4 Redis (optional infra)** — cache (§2.3) + high-volume access counters (§2.1). A Codex/GitOps
-   deploy decision.
-5. **§3.5 Hephaestus + vector index** — similar images (§2.5).
+3. **§3.3 Object-lifecycle events on HermesMQ** — emit put/delete events (reusing the correlation-ID
+   envelope already standardized). **Unlocks:** async workers for compression (§2.2), hashing, and the
+   activity/audit feed view. Per Codex (trivially feasible, zero broker work), follow the constellation's
+   **topic-per-event-type** convention: **`apollo.object.put`** and **`apollo.object.deleted`** (overwrite
+   = a `put` with `generation > 1`), with consumers subscribing per interest
+   (`<consumer>.apollo.object.put`, matching the `artemis.` / `hephaestus.` precedent). Use the object
+   `generation` as the idempotency key for exactly-once-ish delivery.
+4. **§3.4 Redis (optional infra — hold behind measured need)** — would serve the §2.1 access counters
+   (the plausible trigger) more than caching (§2.3). Per Codex, homelab volume likely never saturates
+   in-process LRU + Postgres counters — don't add speculatively.
+5. **Semantic-similarity substrate** — Argus (CLIP) + pgvector, only for §2.5's embedding half (the
+   near-dupe half is already live via Artemis `/similar`).
 
-**Suggested order:** Metrics + Blob-GC views (ready now) → access tracking → temperature view + tiering →
-cold compression → dedup detection → caching → dedup reclamation → similar images.
+**Suggested order:** Metrics + Blob-GC views (ready now) → **near-dupe "find similar" UI** (Artemis
+`/similar` is already live — cheapest high-value win) → access tracking → temperature view + tiering →
+cold compression → dedup detection → dedup reclamation → semantic similarity (Argus/CLIP). Caching only
+if a measured need appears.
 
 ---
 
-## Cross-service asks (for Codex to route)
+## Cross-service asks (feasibility read from Codex, 2026-08-25)
 
-- **Hephaestus:** perceptual-hash / embedding computation + a similarity index; contract via the-lexicon.
-- **HermesMQ:** an Apollo object-lifecycle topic (feeds compression, hashing, similar-image workers).
-- **Infra (GitOps):** a Redis instance if §2.3/§3.4 graduate past in-process.
-- **the-lexicon:** messages/RPCs for hashes, embeddings, and find-similar.
+- **Hephaestus / Artemis — near-dupe similar: ✅ already built & deployed.** Hephaestus computes pHash per
+  media (in `MediaProcessed`); Artemis stores `posts.phash` and serves `GET /posts/{id}/similar` +
+  `GET /similar?phash=` (live on 1.1.1). Remaining = a UI surface (§2.5).
+- **Argus — semantic similarity: 🔬 net-new.** CLIP inference belongs in Argus (Python ML-tagger), not
+  Hephaestus. Needs a **pgvector** extension (swap `postgres:16-alpine` → `pgvector/pgvector:pg16` — a
+  contained change).
+- **HermesMQ — object-lifecycle topic: ✅ trivially feasible.** `apollo.object.put` / `apollo.object.deleted`
+  (see §3.3). Zero broker work; envelope already carries correlation_id + producer dedup.
+- **Infra (GitOps) — Redis: reasonable when warranted, not now.** Single small pod deploys fine; hold
+  behind a measured need (access counters, not caching).
+- **the-lexicon:** `MediaProcessed` **already carries `phash`**, so the hash contract partly exists; net-new
+  is the **embedding message + a find-similar RPC**.
