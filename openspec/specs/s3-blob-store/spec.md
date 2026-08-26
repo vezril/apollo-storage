@@ -1,5 +1,7 @@
 # s3-blob-store
 
+## Purpose
+
 Apollo can delegate durable object-payload storage to an S3-compatible store (for example the QNAP's
 QuObjects) instead of a local/NFS filesystem, keeping the same `BlobStore` contract as the filesystem
 backend. All Apollo blobs live under one S3 bucket; the opaque `BlobRef` is the S3 object key verbatim.

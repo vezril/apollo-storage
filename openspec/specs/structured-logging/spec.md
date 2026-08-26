@@ -1,5 +1,7 @@
 # structured-logging
 
+## Purpose
+
 Apollo emits machine-readable JSON logs in its container so they are queryable in Loki and
 reliably parseable for the self-healing feedback loop (rung L0). Log *format* only — no
 behavioural change. On the JVM this is realized with `logstash-logback-encoder`, selected by

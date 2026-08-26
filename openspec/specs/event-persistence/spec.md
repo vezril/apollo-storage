@@ -1,5 +1,12 @@
 # event-persistence
 
+## Purpose
+
+The durable heart of the catalog: each bucket is an event-sourced entity whose state changes are
+appended to a PostgreSQL journal (r2dbc) and replayed to reconstruct state after a crash. Cluster
+sharding gives every bucket a single writer, so concurrent writes to one bucket serialize instead of
+racing, and the journal remains the system of record from which the read side is derived.
+
 ## Requirements
 
 ### Requirement: BucketEntity as an EventSourcedBehavior

@@ -1,5 +1,7 @@
 # blob-storage
 
+## Purpose
+
 Object payloads live outside the event journal (design D3) in a `BlobStore`. This
 capability defines the filesystem/NFS-backed store and the orchestration that ties
 byte persistence to the existing `CommitObject`/`DeleteObject` domain commands. All

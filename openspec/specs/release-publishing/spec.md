@@ -1,5 +1,12 @@
 # release-publishing
 
+## Purpose
+
+How build artifacts reach a registry: immutable semantic-version images published from tags on
+`main`, and disposable experimental images published from `development`. The separation keeps a
+released tag reproducible and unmovable while still giving the cluster something to deploy between
+releases.
+
 ## Requirements
 
 ### Requirement: Release images from main tags

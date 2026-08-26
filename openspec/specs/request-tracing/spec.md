@@ -1,5 +1,7 @@
 # request-tracing
 
+## Purpose
+
 Apollo mints a correlation ID for every request, threads it through the logs for that request across
 async boundaries, and returns it to the caller — so one ID ties an operation's scattered log lines
 together and back to the client for troubleshooting. The server always generates its own ID (no

@@ -1,5 +1,7 @@
 # api-security
 
+## Purpose
+
 Transport security and authentication for the client-facing gRPC surface (design
 D34–D39). Both TLS and token authentication are toggleable and default off; when
 enabled they protect every object/bucket RPC while leaving health endpoints open.

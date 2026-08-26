@@ -1,5 +1,7 @@
 # clustering
 
+## Purpose
+
 The multi-node runtime foundation (design D27–D33): how ApolloStorage nodes form a
 cluster, survive partitions, and leave gracefully. Entity sharding and projection
 distribution are recorded as deltas on `event-persistence` and `read-projections`.

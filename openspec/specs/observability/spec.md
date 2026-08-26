@@ -1,5 +1,7 @@
 # observability
 
+## Purpose
+
 A Prometheus metrics endpoint and the application/JVM metrics ApolloStorage exposes for
 scrape-based monitoring (design D40–D44). Metrics are additive and behaviourally
 transparent; the object API and `/health` are unchanged. On by default and disableable via
