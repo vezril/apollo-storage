@@ -111,6 +111,15 @@ cache-stampede protection.
 **Recommendation:** start with a **bounded in-process LRU** for small hot blobs; graduate to **Redis**
 only when multi-replica sharing or the §2.1 counters justify the dependency.
 
+> **Tier 0 landed for Apollo's own surface (add-http-caching, 2026-08-26).** Object reads now carry
+> an md5-derived `ETag` with `private, no-cache`, and a conditional read answers `304` from metadata
+> **without touching the blob store** (verified: five conditional reads produced zero blob
+> operations). The docs portal revalidates too — a revisit transfers **0 B instead of 1.65 MB**.
+> Two things follow. The **gateway half** — `/media/{md5}/{variant}`, content-addressed and therefore
+> freezable, measured at ~84 ms per thumbnail — remains with `artemis-service` and is where most of
+> the user-visible win still lives. And any **server-side cache (LRU/Redis) should be re-argued after
+> this lands**: it may have removed the very traffic that would have justified one.
+
 > **Codex push-back (2026-08-25):** at homelab volume, in-process LRU + Postgres counters likely **never
 > saturate** — hold Redis behind a *measured* need, and the plausible trigger is the §2.1 access counters,
 > **not caching**. A small Redis (single pod, local-path PVC, ~64–128Mi) deploys fine when warranted;

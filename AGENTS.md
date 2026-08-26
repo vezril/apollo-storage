@@ -107,6 +107,22 @@ contract — it is packaged into the jar at build time and served at `/docs/open
 served document cannot drift from the reviewed one. [`insomnia/`](insomnia/) is the runnable
 collection covering the same surface.
 
+**Cache semantics on the object API** (add-http-caching). Three rules a change must not silently
+break:
+
+1. **The validator is the object's md5**, exposed as a strong `ETag`. Not the generation — an
+   overwrite with byte-identical content leaves the client's copy current, and an md5 validator
+   correctly answers `304` there.
+2. **Object URLs are never `immutable` and never carry a positive `max-age`.** A path is mutable by
+   design (an overwrite increments the generation at the same path), so responses are
+   `private, no-cache` — store, but revalidate.
+3. **Errors are `no-store`.** A `404` for an object still being written must not be remembered, or
+   the object never appears for that client.
+
+`If-None-Match` is compared *before* `getObject`, because `BlobStore.get` costs an S3 round-trip
+before any byte flows; a `304` must resolve from `headObject` alone. `ObjectCachingSpec` asserts the
+blob store is untouched on a `304` — if you refactor that path, keep that assertion meaningful.
+
 ⚠️ **Adding an HTTP route obliges you to do three things in the same change:** document it in the
 OpenAPI file, add it to the inventory in `DocumentedSurfaceSpec`, and add a request to the Insomnia
 collection. The spec test enforces the first two against each other, but nothing can force you to

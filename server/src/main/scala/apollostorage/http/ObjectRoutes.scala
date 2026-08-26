@@ -8,7 +8,14 @@ import apollostorage.projection.ObjectRow
 import apollostorage.tracing.CorrelationId
 import org.apache.pekko.http.scaladsl.marshallers.sprayjson.SprayJsonSupport
 import org.apache.pekko.http.scaladsl.model.*
-import org.apache.pekko.http.scaladsl.model.headers.RawHeader
+import org.apache.pekko.http.scaladsl.model.headers.{
+  `Cache-Control`,
+  CacheDirectives,
+  ETag,
+  EntityTag,
+  `If-None-Match`,
+  RawHeader
+}
 import org.apache.pekko.http.scaladsl.server.Directives.*
 import org.apache.pekko.http.scaladsl.server.{ExceptionHandler, Route}
 import org.slf4j.MDC
@@ -138,25 +145,36 @@ object ObjectRoutes extends SprayJsonSupport:
             },
             get {
               authorized(Scope.Read, auth) {
-                onSuccess(ops.getObject(bucket, obj)) { case (entry, source) =>
-                  respondWithHeaders(metaHeaders(entry)) {
-                    val ct = contentTypeOf(entry)
-                    val size = entry.metadata.sizeBytes
-                    val entity =
-                      if size > 0 then HttpEntity.Default(ct, size, source)
-                      else HttpEntity.empty(ct)
-                    complete(HttpResponse(entity = entity))
+                optionalHeaderValueByType(`If-None-Match`) { ifNoneMatch =>
+                  revalidate(ops, bucket, obj, ifNoneMatch) {
+                    onSuccess(ops.getObject(bucket, obj)) { case (entry, source) =>
+                      respondWithHeaders(readHeaders(entry)) {
+                        val ct = contentTypeOf(entry)
+                        val size = entry.metadata.sizeBytes
+                        val entity =
+                          if size > 0 then HttpEntity.Default(ct, size, source)
+                          else HttpEntity.empty(ct)
+                        complete(HttpResponse(entity = entity))
+                      }
+                    }
                   }
                 }
               }
             },
             head {
               authorized(Scope.Read, auth) {
-                onSuccess(ops.headObject(bucket, obj)) { entry =>
-                  respondWithHeaders(metaHeaders(entry)) {
-                    complete(
-                      HttpResponse(StatusCodes.OK, entity = HttpEntity.empty(contentTypeOf(entry)))
-                    )
+                optionalHeaderValueByType(`If-None-Match`) { ifNoneMatch =>
+                  revalidate(ops, bucket, obj, ifNoneMatch) {
+                    onSuccess(ops.headObject(bucket, obj)) { entry =>
+                      respondWithHeaders(readHeaders(entry)) {
+                        complete(
+                          HttpResponse(
+                            StatusCodes.OK,
+                            entity = HttpEntity.empty(contentTypeOf(entry))
+                          )
+                        )
+                      }
+                    }
                   }
                 }
               }
@@ -184,6 +202,61 @@ object ObjectRoutes extends SprayJsonSupport:
         case AuthOutcome.Unauthenticated => complete(StatusCodes.Unauthorized)
         case AuthOutcome.Forbidden => complete(StatusCodes.Forbidden)
     }
+
+  /**
+   * Cache directives for an object read. Apollo object paths are **mutable** — an overwrite
+   * increments the generation at the same path — so a read may be stored but MUST be revalidated
+   * before reuse. Never `immutable`, never a positive `max-age`: either would let a client serve
+   * superseded bytes. `private` because object reads are authenticated when auth is enabled, and a
+   * shared cache must not retain one identity's payload for another (design D2).
+   */
+  private val objectCacheControl: HttpHeader =
+    `Cache-Control`(CacheDirectives.`private`(), CacheDirectives.`no-cache`)
+
+  /**
+   * Errors are never storable. The case that matters: a client reads an object while it is still
+   * being written, gets a 404, and — if that response were remembered — would never see the object
+   * appear (design D4).
+   */
+  private val noStore: HttpHeader = `Cache-Control`(CacheDirectives.`no-store`)
+
+  /**
+   * The validator is the object's md5: an ETag identifies a *representation*, not a version
+   * counter. An overwrite with byte-identical content bumps the generation but leaves the bytes —
+   * and the client's copy — current, so the md5 correctly yields a 304 there where a
+   * generation-derived tag would force a pointless re-transfer (design D1). Strong, because it is
+   * computed over the exact bytes.
+   */
+  private def validatorOf(entry: ObjectEntry): EntityTag = EntityTag(entry.checksums.md5)
+
+  private def readHeaders(entry: ObjectEntry): List[HttpHeader] =
+    ETag(validatorOf(entry)) :: objectCacheControl :: metaHeaders(entry)
+
+  /**
+   * Short-circuit a conditional read. Resolving metadata via `headObject` touches only the read
+   * model, so a matching validator answers 304 without ever opening the blob store — which is the
+   * entire saving, since `BlobStore.get` costs an S3 round-trip before any byte flows.
+   *
+   * The lookup happens **only when the caller supplies a validator**; an unconditional read runs
+   * `inner` directly and is byte-for-byte the path it took before this existed (design D3).
+   */
+  private def revalidate(
+      ops: ObjectOperations,
+      bucket: String,
+      obj: String,
+      ifNoneMatch: Option[`If-None-Match`]
+  )(inner: => Route): Route =
+    ifNoneMatch match
+      case None => inner
+      case Some(condition) =>
+        onSuccess(ops.headObject(bucket, obj)) { entry =>
+          // Weak comparison per RFC 9110 for If-None-Match.
+          if EntityTag.matchesRange(validatorOf(entry), condition.m, weakComparison = true) then
+            respondWithHeaders(readHeaders(entry)) {
+              complete(HttpResponse(StatusCodes.NotModified))
+            }
+          else inner
+        }
 
   private def metaHeaders(entry: ObjectEntry): List[HttpHeader] =
     List(
@@ -218,14 +291,23 @@ object ObjectRoutes extends SprayJsonSupport:
 
   private def exceptionHandler: ExceptionHandler = ExceptionHandler {
     case DomainException(err) =>
-      complete(statusFor(err), ErrorJson(codeFor(err), err.message, cid()))
+      respondWithHeader(noStore) {
+        complete(statusFor(err), ErrorJson(codeFor(err), err.message, cid()))
+      }
     case e: BlobStoreException.ChecksumMismatch =>
-      complete(StatusCodes.PreconditionFailed, ErrorJson("CHECKSUM_MISMATCH", e.getMessage, cid()))
+      respondWithHeader(noStore) {
+        complete(
+          StatusCodes.PreconditionFailed,
+          ErrorJson("CHECKSUM_MISMATCH", e.getMessage, cid())
+        )
+      }
     case NonFatal(e) =>
-      complete(
-        StatusCodes.InternalServerError,
-        ErrorJson("INTERNAL", Option(e.getMessage).getOrElse("internal error"), cid())
-      )
+      respondWithHeader(noStore) {
+        complete(
+          StatusCodes.InternalServerError,
+          ErrorJson("INTERNAL", Option(e.getMessage).getOrElse("internal error"), cid())
+        )
+      }
   }
 
   private def statusFor(error: DomainError): StatusCode = error match
