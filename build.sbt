@@ -135,6 +135,11 @@ lazy val server = (project in file("server"))
       // (DISCOVERY_METHOD=kubernetes-api). Without it, Bootstrap throws at startup — local/compose
       // use the `config` method so this path was never exercised until the first k8s deploy.
       "org.apache.pekko" %% "pekko-discovery-kubernetes-api" % pekkoManagementVersion,
+      // Swagger UI assets served from the classpath by DocsRoutes (design D1). A webjar, not a
+      // CDN: Apollo runs on a LAN with no assumed internet egress, so the docs must render offline.
+      // The version is embedded in the resource path — keep it in step with DocsAssets.SwaggerUiVersion
+      // (DocsPackagingSpec fails if they drift).
+      "org.webjars" % "swagger-ui" % "5.25.3",
       "ch.qos.logback" % "logback-classic" % logbackVersion,
       // Structured (JSON) logs for Loki + the self-healing loop (add-structured-logging).
       "net.logstash.logback" % "logstash-logback-encoder" % "8.0",
@@ -145,9 +150,24 @@ lazy val server = (project in file("server"))
       "org.scalatest" %% "scalatest" % scalaTestVersion % Test,
       "com.dimafeng" %% "testcontainers-scala-scalatest" % testcontainersVersion % Test,
       "com.dimafeng" %% "testcontainers-scala-postgresql" % testcontainersVersion % Test,
+      // Test-only YAML parser so the docs spec test really parses the served document
+      // (a substring check would pass on a malformed file).
+      "org.yaml" % "snakeyaml" % "2.3" % Test,
       // JDBC driver used by tests to apply DDL and assert journal rows.
       "org.postgresql" % "postgresql" % "42.7.4" % Test
     ),
+    // The served OpenAPI document is COPIED from docs/ at build time (design D2) rather than kept
+    // as a second copy under resources/. docs/rest-api.openapi.yaml stays the single reviewed
+    // source (the README links it and verify-docs.sh enforces that), and drift becomes impossible
+    // instead of merely discouraged.
+    Compile / resourceGenerators += Def.task {
+      val source = (ThisBuild / baseDirectory).value / "docs" / "rest-api.openapi.yaml"
+      val target = (Compile / resourceManaged).value / "openapi" / "rest-api.openapi.yaml"
+      if (!source.exists)
+        sys.error(s"OpenAPI document not found at $source — the docs portal cannot be packaged")
+      IO.copyFile(source, target)
+      Seq(target)
+    }.taskValue,
     // BuildInfo exposes the dynver version to the running app (health endpoint).
     buildInfoKeys := Seq[BuildInfoKey](name, version, scalaVersion, sbtVersion),
     buildInfoPackage := "apollostorage.build",

@@ -175,6 +175,23 @@ curl 'localhost:8080/v1/buckets/media/objects?prefix=photos/'
 > tokens, enabling `TLS_ENABLED=true` serves **both** the gRPC and HTTP listeners over TLS — keep REST
 > LAN-only unless TLS is on (see **Securing the API**).
 
+## API documentation and tooling
+
+The service documents itself. With Apollo running, open **<http://localhost:8080/docs>** for an
+interactive Swagger UI rendered against its own OpenAPI document (also served raw at
+`/docs/openapi.yaml`). The assets are served from the application's classpath, so the page works on a
+LAN with no internet access — which is when you most need it. Both endpoints are unauthenticated and
+read-only; *Try it out* issues real requests against the server you select.
+
+The same contract lives in the repo at [`docs/rest-api.openapi.yaml`](docs/rest-api.openapi.yaml) —
+it is packaged into the jar at build time, so what you read here and what the service serves cannot
+drift. For a runnable client, import the collection in [`insomnia/`](insomnia/), which covers the
+REST object API, the operational endpoints, and gRPC.
+
+Working on this project with an AI agent? Start with [`AGENTS.md`](AGENTS.md) — architecture,
+invariants, the mandatory TDD/OpenSpec workflow, and the current deployment picture, kept current
+with every change.
+
 ## Securing the API
 
 TLS and token authentication are **opt-in and default off**. When disabled the
