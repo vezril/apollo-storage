@@ -9,8 +9,12 @@ info:
     bucket/list operations return JSON. When auth is enabled, a Bearer token is required — write scope
     for mutations, read scope for reads.
 servers:
+  # Relative first, so "try it out" from the built-in docs page targets the deployment you are
+  # actually looking at (LAN, tailnet, or localhost) instead of a hard-coded host.
+  - url: /
+    description: This deployment (relative to the documentation page)
   - url: http://localhost:8080
-    description: HTTP listener (cleartext on the LAN; TLS when TLS_ENABLED=true)
+    description: Local HTTP listener (cleartext on the LAN; TLS when TLS_ENABLED=true)
 security:
   - bearerAuth: []
 components:
@@ -44,6 +48,29 @@ components:
       properties:
         objects: { type: array, items: { $ref: '#/components/schemas/ObjectEntry' } }
         nextPageToken: { type: string }
+    Health:
+      type: object
+      properties:
+        status: { type: string, enum: [UP, DOWN] }
+        service: { type: string, example: apollostorage }
+        version: { type: string, description: Build version }
+    GcReport:
+      type: object
+      description: >-
+        Blob-GC reconciliation report. `dryRun` is true unless the request passed `delete=true`;
+        a dry run reports what it would reclaim without deleting anything.
+      properties:
+        dryRun: { type: boolean }
+        bucketsScanned: { type: integer }
+        bucketsSkipped: { type: integer }
+        blobsScanned: { type: integer }
+        liveBlobs: { type: integer }
+        orphansFound: { type: integer }
+        bytesOrphaned: { type: integer, format: int64 }
+        reclaimed: { type: integer }
+        bytesReclaimed: { type: integer, format: int64 }
+        tmpFound: { type: integer }
+        tmpReclaimed: { type: integer }
   headers:
     XApolloGeneration: { schema: { type: integer, format: int64 }, description: Object generation }
     XApolloSize: { schema: { type: integer, format: int64 }, description: Object size in bytes }
@@ -140,3 +167,73 @@ paths:
       responses:
         '204': { description: Deleted }
         '404': { $ref: '#/components/responses/NotFound' }
+  /health:
+    get:
+      summary: Liveness / readiness
+      description: >-
+        Reports `UP` while the service is ready, and `DOWN` with a `503` once readiness is
+        withdrawn during coordinated shutdown. Unauthenticated: it carries no object data, and a
+        probe must work without a token.
+      security: []
+      responses:
+        '200':
+          description: Service is ready
+          content: { application/json: { schema: { $ref: '#/components/schemas/Health' } } }
+        '503':
+          description: Shutting down or not ready (body reports DOWN)
+          content: { application/json: { schema: { $ref: '#/components/schemas/Health' } } }
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      description: >-
+        Application metrics in Prometheus text exposition format. Deliberately unauthenticated —
+        operational telemetry only, never object data. Absent (404) when metrics are disabled.
+      security: []
+      responses:
+        '200':
+          description: Text exposition payload
+          content:
+            text/plain:
+              schema: { type: string }
+        '404': { description: Metrics are disabled }
+  /admin/blob-gc:
+    post:
+      summary: Run a blob-GC reconciliation sweep
+      description: >-
+        Reconciles stored blobs against the catalog and reports orphans. A **dry run** unless
+        `delete=true` is passed, which makes the sweep destructive. Requires a write-scoped bearer
+        token when auth is enabled. Absent (404) when blob GC is disabled.
+      parameters:
+        - name: delete
+          in: query
+          schema: { type: boolean, default: false }
+          description: When true, actually delete the orphans found (destructive).
+      responses:
+        '200':
+          description: Sweep report
+          content: { application/json: { schema: { $ref: '#/components/schemas/GcReport' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { description: Blob GC is disabled }
+  /docs:
+    get:
+      summary: Interactive API documentation
+      description: >-
+        Swagger UI rendered against this document. Assets are served from the application's own
+        classpath, so the page renders with no internet access. Unauthenticated and read-only.
+      security: []
+      responses:
+        '200':
+          description: The documentation page
+          content: { text/html: { schema: { type: string } } }
+  /docs/openapi.yaml:
+    get:
+      summary: This OpenAPI document
+      description: >-
+        The document backing the documentation page — the same artifact kept at
+        `docs/rest-api.openapi.yaml`, packaged at build time. Unauthenticated and read-only.
+      security: []
+      responses:
+        '200':
+          description: The OpenAPI document
+          content: { application/yaml: { schema: { type: string } } }
