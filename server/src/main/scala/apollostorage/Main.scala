@@ -23,6 +23,7 @@ import apollostorage.build.BuildInfo
 import apollostorage.config.{AppConfig, BlobBackend}
 import apollostorage.http.{
   AdminRoutes,
+  DocsRoutes,
   HealthRoutes,
   HttpServer,
   LiveObjectOperations,
@@ -144,8 +145,12 @@ object Main:
         authenticator
       )
     // Mint a correlation id per request, MDC it, access-log, and echo X-Correlation-Id (request-tracing).
+    // Interactive API docs (api-docs-portal): Swagger UI + the OpenAPI document, served from the
+    // classpath so the page renders with no internet egress. Unauthenticated like /health — it
+    // exposes the API's shape, never data.
+    val docsRoutes = DocsRoutes()
     val httpRoutes = RequestTracing.withCorrelationId {
-      (restRoutes :: metrics.map(MetricsRoutes.apply).toList ++ adminRoutes.toList)
+      (restRoutes :: docsRoutes :: metrics.map(MetricsRoutes.apply).toList ++ adminRoutes.toList)
         .foldLeft(healthRoutes)(_ ~ _)
     }
     val grpcHandlerRaw = GrpcServer.handler(objectApi, health)
