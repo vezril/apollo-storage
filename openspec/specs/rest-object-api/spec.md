@@ -1,5 +1,7 @@
 # rest-object-api
 
+## Purpose
+
 Apollo serves a plain RESTful bucket/object API at `/v1/...` on the HTTP listener alongside the gRPC
 `ObjectApi` — a second adapter over the same event-sourced core (`ObjectService` + bucket entities +
 `BlobStore` + read model), so REST and gRPC share generations, checksums, and effects. It is the easy

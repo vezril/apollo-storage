@@ -1,5 +1,7 @@
 # schema-migration
 
+## Purpose
+
 Apollo provisions its own database schema at startup (design D62–D66), so a fresh PostgreSQL —
 Compose, Kubernetes, or bare — works with no external init step. The schema is a single bundled,
 idempotent DDL; migration is toggleable (default on) and fails fast.

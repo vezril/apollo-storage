@@ -1,5 +1,11 @@
 # service-runtime
 
+## Purpose
+
+The process itself — what it means for ApolloStorage to start, report itself healthy, and stop
+without losing work. Covers the Pekko application skeleton, the `/health` endpoint that orchestrators
+probe, graceful startup and coordinated shutdown, and the Docker image the service ships as.
+
 ## Requirements
 
 ### Requirement: Minimal Pekko application with health endpoint

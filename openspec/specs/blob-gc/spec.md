@@ -1,5 +1,7 @@
 # blob-gc
 
+## Purpose
+
 Reconciling the blob store against live object state to reclaim orphaned payloads, safely
 (design D50–D56). Orphans arise from overwrites, crashes between persisting a payload and its
 event, and failed best-effort deletes, plus `.tmp` debris. The sweep is off by default,
