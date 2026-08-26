@@ -542,11 +542,19 @@
       "_type": "request",
       "parentId": "fld_apollo_rest",
       "name": "Download object",
-      "description": "Streams the object bytes back, with the X-Apollo-* metadata headers. 404 if absent.",
+      "description": "Streams the object bytes back, with the X-Apollo-* metadata headers. 404 if absent. Responses carry an ETag; enable the If-None-Match header and paste it back to revalidate cheaply.",
       "method": "GET",
       "url": "{{ _.base_url }}/v1/buckets/{{ _.bucket }}/objects/{{ _.object }}",
       "parameters": [],
-      "headers": [],
+      "headers": [
+        {
+          "id": "pair_inm_get",
+          "name": "If-None-Match",
+          "value": "",
+          "disabled": true,
+          "description": "Paste the ETag from a previous response to revalidate: a match returns 304 with no body, resolved from metadata without reading the payload."
+        }
+      ],
       "authentication": {
         "type": "bearer",
         "token": "{{ _.auth_token }}",

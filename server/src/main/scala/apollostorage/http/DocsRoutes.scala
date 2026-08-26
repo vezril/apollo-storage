@@ -1,6 +1,7 @@
 package apollostorage.http
 
 import org.apache.pekko.http.scaladsl.model.*
+import org.apache.pekko.http.scaladsl.model.headers.{`Cache-Control`, CacheDirectives}
 import org.apache.pekko.http.scaladsl.server.Directives.*
 import org.apache.pekko.http.scaladsl.server.Route
 
@@ -29,8 +30,21 @@ object DocsRoutes:
       ContentType(MediaTypes.`application/javascript`, HttpCharsets.`UTF-8`)
     else ContentTypes.`application/octet-stream`
 
+  /**
+   * Documentation is revalidated, never frozen. The assets are served at version-less URLs
+   * (`/docs/swagger-ui.css`) while their bytes come from a version-pinned classpath path, so a
+   * positive `max-age` would pin a viewer to a stale UI across an upgrade. `no-cache` keeps the
+   * copy but re-checks it, turning a repeat `/docs` load from ~1.5 MB of JavaScript into a `304`
+   * with an empty body. `public` is safe here: these endpoints expose only the API's shape.
+   *
+   * The validators themselves come from pekko's resource directives, which already derive an `ETag`
+   * from the resource and answer conditional requests — see the design note on D5.
+   */
+  private val docsCacheControl: HttpHeader =
+    `Cache-Control`(CacheDirectives.public, CacheDirectives.`no-cache`)
+
   def apply(): Route =
-    (pathPrefix("docs") & get) {
+    (pathPrefix("docs") & get & respondWithHeader(docsCacheControl)) {
       concat(
         pathEndOrSingleSlash {
           complete(HttpEntity(ContentTypes.`text/html(UTF-8)`, page))
