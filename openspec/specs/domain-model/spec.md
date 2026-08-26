@@ -1,5 +1,7 @@
 # domain-model
 
+## Purpose
+
 All requirements in this capability live in the pure `core` module: no Pekko dependencies, immutable data, ADTs, smart constructors returning `Either[DomainError, A]`. Exhaustively unit-tested.
 
 ## Requirements

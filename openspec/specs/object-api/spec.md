@@ -1,5 +1,7 @@
 # object-api
 
+## Purpose
+
 The client-facing gRPC surface for the bucket and object lifecycle (design D7),
 delegating to the existing `ObjectService`, `BucketEntity`, and `BlobStore`. All
 payload transfer is streaming; HTTP `/health` (service-runtime) is unchanged.

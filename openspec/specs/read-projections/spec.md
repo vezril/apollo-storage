@@ -1,5 +1,7 @@
 # read-projections
 
+## Purpose
+
 The event-sourced read side (design D21): a Pekko Projection folds the bucket
 journal into PostgreSQL query tables in the same database, with durable offsets so
 it resumes exactly where it left off.

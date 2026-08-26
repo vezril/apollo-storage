@@ -1,5 +1,12 @@
 # project-scaffolding
 
+## Purpose
+
+The repository's own release and verification machinery: semantic versions derived from git tags, a
+two-branch flow (`development` integrates, `main` is protected and releasable), and CI that verifies
+every pull request. These are the rules that make a version number mean something — they exist so a
+release can only come from a reviewed, tested, explicitly tagged commit.
+
 ## Requirements
 
 ### Requirement: Semantic versioning via git tags
