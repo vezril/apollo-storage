@@ -138,6 +138,14 @@ content is currently stored **twice**.
 
 **Depends on:** §3.2 content-hash index (detection) → content-addressed storage + refcounting (dedup).
 
+> **Design-alignment note (2026-08-25):** the constellation already **designed dedup at the Artemis
+> layer**, not Apollo's — Calvin's Danbooru-style decision (`design-artemis-dedup-and-gc`): enforce **md5
+> uniqueness at the POST layer** → blob↔post **1:1**, so a duplicate upload **merges** into the existing
+> post (no ref-counting/mark-sweep). That makes Apollo-level content-addressed dedup (level 2 above) mostly
+> **redundant** — Apollo stays the dumb blob substrate; Artemis owns "is this a duplicate post?". A pure
+> Apollo-level **Duplicates report** (level 1) is still a fine storage-hygiene view, but reclamation should
+> defer to the Artemis design rather than re-solving it in the blob store.
+
 ### 2.5 Similar-image detection 🌐
 
 Beyond *exact* duplicates: perceptually **similar** images (resized, re-encoded, cropped, watermarked).
