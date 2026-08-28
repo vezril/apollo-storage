@@ -71,12 +71,33 @@ components:
         bytesReclaimed: { type: integer, format: int64 }
         tmpFound: { type: integer }
         tmpReclaimed: { type: integer }
+  parameters:
+    IfNoneMatch:
+      name: If-None-Match
+      in: header
+      required: false
+      schema: { type: string }
+      description: >-
+        A validator previously received in an `ETag`. When it matches the object's current
+        validator the server answers `304` with no body, resolved from metadata without reading
+        the payload.
   headers:
+    ETag:
+      schema: { type: string }
+      description: >-
+        Strong validator for this representation, derived from the object's md5. Present on object
+        `GET` and `HEAD`. Send it back as `If-None-Match` to revalidate cheaply.
     XApolloGeneration: { schema: { type: integer, format: int64 }, description: Object generation }
     XApolloSize: { schema: { type: integer, format: int64 }, description: Object size in bytes }
     XApolloCrc32c: { schema: { type: string } }
     XApolloMd5: { schema: { type: string } }
   responses:
+    NotModified:
+      description: >-
+        The supplied validator matches the object's current one; the client's copy is still current.
+        No body is returned and the payload is never read.
+      headers:
+        ETag: { $ref: '#/components/headers/ETag' }
     NotFound:
       description: Bucket or object not found
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
@@ -141,10 +162,18 @@ paths:
         '412': { description: Expected-checksum mismatch, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
     get:
       summary: Download an object (raw response body)
+      description: >-
+        Responses carry an `ETag` and `Cache-Control: private, no-cache` — an object path is
+        mutable (an overwrite increments the generation at the same path), so a stored copy must be
+        revalidated before reuse and is never marked immutable.
+      parameters:
+        - $ref: '#/components/parameters/IfNoneMatch'
       responses:
+        '304': { $ref: '#/components/responses/NotModified' }
         '200':
           description: OK
           headers:
+            ETag: { $ref: '#/components/headers/ETag' }
             X-Apollo-Generation: { $ref: '#/components/headers/XApolloGeneration' }
             X-Apollo-Size: { $ref: '#/components/headers/XApolloSize' }
             X-Apollo-Crc32c: { $ref: '#/components/headers/XApolloCrc32c' }
@@ -153,10 +182,14 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
     head:
       summary: Object metadata as headers (no body)
+      parameters:
+        - $ref: '#/components/parameters/IfNoneMatch'
       responses:
+        '304': { $ref: '#/components/responses/NotModified' }
         '200':
           description: OK
           headers:
+            ETag: { $ref: '#/components/headers/ETag' }
             X-Apollo-Generation: { $ref: '#/components/headers/XApolloGeneration' }
             X-Apollo-Size: { $ref: '#/components/headers/XApolloSize' }
             X-Apollo-Crc32c: { $ref: '#/components/headers/XApolloCrc32c' }
