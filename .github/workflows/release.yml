@@ -12,6 +12,9 @@ env:
   IMAGE_NAME: apollostorage
   # read:packages PAT to resolve the Lexicon gRPC artifact from GitHub Packages.
   LEXICON_TOKEN: ${{ secrets.LEXICON_TOKEN }}
+  # Release runs the full suite before publishing, so it needs the same Engine API pin as CI —
+  # see the note in ci.yml. Without it the testcontainers suites abort and no release can ship.
+  DOCKER_API_VERSION: "1.43"
 
 jobs:
   release:

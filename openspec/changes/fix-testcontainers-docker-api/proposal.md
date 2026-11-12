@@ -40,5 +40,16 @@ projections, sharding or the S3 backend for that whole window.
   ≥1.40, and it cannot be confirmed fixed on a machine with no container runtime. Locally the bump
   resolves cleanly, compiles, and leaves the 215 non-container tests green; whether the Engine
   handshake now succeeds is answered by the `Compile & test` job on the PR, not by a local run.
-- **Out of scope:** forcing the version with a `DOCKER_API_VERSION` env override. That hides an
-  outdated client rather than replacing it, and is the fallback if the bump proves insufficient.
+## Update — the bump alone was not sufficient
+
+The first CI run on this branch reproduced the identical 400 with `testcontainers-java` 1.20.2 and
+`docker-java` 3.4.0 resolved. The 1.32 default therefore does **not** live in the artifact that was
+bumped, so raising it could never have moved the advertised version on its own.
+
+`DOCKER_API_VERSION: "1.43"` is now set in the workflow-level `env` of both `ci.yml` and
+`release.yml`, pinning what the client advertises rather than leaving it to a default nothing in
+this repository controls. The version bump is kept: it is a current client, it resolves and compiles
+cleanly, and it is the right baseline to carry the pin.
+
+This is honestly a **workaround for a client default, not a fix for it** — recorded as such, and
+destined for AGENTS.md §8 once CI confirms it works.

@@ -16,6 +16,11 @@ concurrency:
 # another repo's package). Supply a read:packages PAT as the LEXICON_TOKEN secret.
 env:
   LEXICON_TOKEN: ${{ secrets.LEXICON_TOKEN }}
+  # docker-java sends Engine API 1.32 when nothing tells it otherwise, and the runner's Docker
+  # Engine rejects anything below 1.40 — which aborted every testcontainers suite. Bumping
+  # testcontainers alone did not move it (the stale default is not in that artifact), so pin the
+  # version the client advertises. 1.43 is supported by Engine 24+ and well under the ceiling.
+  DOCKER_API_VERSION: "1.43"
 
 jobs:
   # Formatting is a separate job so a scalafmt violation fails independently of

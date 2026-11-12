@@ -10,8 +10,14 @@
 ## 2. Verify
 
 - [x] 2.1 Local: 215 tests green (core 32, server 183 non-container) — unchanged by the bump
-- [ ] 2.2 **CI: the 8 integration suites run instead of aborting.** This is the real assertion and
-  it can only be made on a runner. Watch `Compile & test` on the PR; a green job means the Engine
-  handshake succeeded and the journal/projection/sharding/S3 suites actually executed
-- [ ] 2.3 If the handshake still fails, fall back to a `DOCKER_API_VERSION` env override in
-  `ci.yml` + `release.yml` and record it in AGENTS.md §8 as a known gap
+- [x] 2.2 **CI: the bump alone was not enough.** First run on this branch reproduced the identical
+  `client version 1.32 is too old` 400 with testcontainers 1.20.2 / docker-java 3.4.0 resolved, so
+  the stale default does not live in the artifact that was bumped. Empirically falsified, recorded
+  rather than retried
+- [x] 2.3 Fallback applied: `DOCKER_API_VERSION: "1.43"` in the workflow-level `env` of both
+  `ci.yml` and `release.yml` (release runs the full suite before publishing, so it needs the same
+  pin). Pins what the client advertises instead of leaving it to a default nothing controls
+- [ ] 2.4 CI: the 8 suites run instead of aborting. Still the only real assertion, still only
+  answerable on a runner — watch `Compile & test`
+- [ ] 2.5 AGENTS.md §8: record the pin as a known gap once CI confirms it works — it is a
+  workaround for a client default, not a fix for it
