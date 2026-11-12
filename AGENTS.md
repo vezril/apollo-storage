@@ -192,6 +192,20 @@ Known gaps, all deliberate:
 - **Discovery pod-label selector is hard-coded** to the chart's labels; a `POD_LABEL_SELECTOR` knob
   is a filed follow-up. A mismatch here silently prevents the cluster from forming.
 - **The documented-surface inventory is manual** (see §5).
+- **The S3 blob backend has no integration coverage.** `S3BlobStoreIT` is ignored at class level:
+  `minio/minio` has been withdrawn from Docker Hub and `quay.io/minio/minio` needs authentication,
+  so it can no longer pull its container — and the abort happened at container start, taking the
+  whole build with it. The suite body is intact and explains the trade-off; picking a replacement is
+  a real decision, not a swap, because it checks path-style addressing, streaming multipart put with
+  checksum verification, and ETag/md5 against a *real* S3 — which is what QuObjects is in
+  production. `adobe/s3mock` may diverge on those edges, `localstack` is closer but slower, and
+  authenticating the MinIO pull would keep the test identical. **Do not delete the suite instead.**
+- **The Docker Engine API version is hard-coded for tests.** `build.sbt` sets
+  `Test / javaOptions += "-Dapi.version=1.43"` because docker-java otherwise advertises 1.32 and
+  every current Engine rejects anything below 1.40 — which silently aborted all 8 integration suites
+  between 2026-08-28 and 2026-11-12. Note it is the `api.version` **system property**;
+  `DOCKER_API_VERSION` is not read, so the obvious fix does nothing. This pin will need revisiting
+  when the Engine floor moves again.
 - **Coverage is reported, not gated.** `sbt-scoverage` runs in CI and the report is uploaded as an
   artifact, but no `coverageMinimumStmtTotal` floor is set — the number is published so a floor can
   be chosen from evidence rather than guessed. Setting it is the follow-up.
