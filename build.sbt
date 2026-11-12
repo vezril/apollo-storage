@@ -55,7 +55,7 @@ lazy val pekkoR2dbcVersion = "1.1.0"
 lazy val pekkoProjectionVersion = "1.1.0"
 lazy val pekkoManagementVersion = "1.2.1"
 lazy val scalaTestVersion = "3.2.19"
-lazy val testcontainersVersion = "0.41.4"
+lazy val testcontainersVersion = "0.43.0"
 lazy val logbackVersion = "1.5.12"
 lazy val prometheusVersion = "0.16.0"
 
@@ -63,7 +63,14 @@ lazy val prometheusVersion = "0.16.0"
 lazy val commonSettings = Seq(
   Test / fork := true,
   Test / testForkedParallel := false,
-  scalafmtOnCompile := false
+  scalafmtOnCompile := false,
+  // docker-java advertises Engine API 1.32 unless told otherwise, and any current Docker Engine
+  // rejects anything below 1.40 — which aborted every testcontainers suite with
+  // "client version 1.32 is too old". The lever is docker-java's `api.version` *system property*;
+  // the DOCKER_API_VERSION environment variable is NOT read (measured: with the env var set the
+  // client still requested /v1.32/info; with this property it requests /v1.43/info). Tests are
+  // forked, so it has to be a Test/javaOption rather than an sbt JVM flag.
+  Test / javaOptions += "-Dapi.version=1.43"
 )
 
 lazy val root = (project in file("."))

@@ -1,0 +1,6 @@
+schema: spec-driven
+created: 2026-11-12
+# No spec delta: this is a dependency bump that repairs a broken implementation, not a change in
+# required behaviour. The integration suites were already required to run against real Postgres and
+# S3 — they simply stopped being able to reach a Docker daemon when the runner image moved.
+skip_specs: true
