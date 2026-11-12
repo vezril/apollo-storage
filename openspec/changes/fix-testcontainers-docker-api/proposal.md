@@ -40,16 +40,40 @@ projections, sharding or the S3 backend for that whole window.
   ≥1.40, and it cannot be confirmed fixed on a machine with no container runtime. Locally the bump
   resolves cleanly, compiles, and leaves the 215 non-container tests green; whether the Engine
   handshake now succeeds is answered by the `Compile & test` job on the PR, not by a local run.
-## Update — the bump alone was not sufficient
+## What actually fixes it — measured, not inferred
 
-The first CI run on this branch reproduced the identical 400 with `testcontainers-java` 1.20.2 and
-`docker-java` 3.4.0 resolved. The 1.32 default therefore does **not** live in the artifact that was
-bumped, so raising it could never have moved the advertised version on its own.
+Two attempts were falsified in CI before the mechanism was understood:
 
-`DOCKER_API_VERSION: "1.43"` is now set in the workflow-level `env` of both `ci.yml` and
-`release.yml`, pinning what the client advertises rather than leaving it to a default nothing in
-this repository controls. The version bump is kept: it is a current client, it resolves and compiles
-cleanly, and it is the right baseline to carry the pin.
+1. **Bumping testcontainers was not enough.** The identical 400 reproduced with
+   `testcontainers-java` 1.20.2 / `docker-java` 3.4.0 resolved, so the stale default does not live
+   in the artifact that was bumped.
+2. **`DOCKER_API_VERSION` is not read.** Setting it in the workflow env had no effect — and the
+   forked test JVM demonstrably *did* inherit it, so this was not a delivery problem.
 
-This is honestly a **workaround for a client default, not a fix for it** — recorded as such, and
-destined for AGENTS.md §8 once CI confirms it works.
+The mechanism was then measured locally **without a Docker daemon at all**, by pointing
+`DOCKER_HOST` at a Unix socket that logs the request line it receives:
+
+| Setting | Request the client makes |
+|---|---|
+| baseline | `GET /v1.32/info` |
+| `DOCKER_API_VERSION=1.43` (env) | `GET /v1.32/info` — ignored |
+| `-Dapi.version=1.43` (system property) | **`GET /v1.43/info`** |
+
+docker-java reads its `api.version` **system property**, not the environment variable. Because tests
+are forked, it has to be a `Test / javaOptions` entry rather than a flag on the sbt JVM.
+
+## Impact
+
+- `build.sbt`: `Test / javaOptions += "-Dapi.version=1.43"`. This also covers `release.yml`, which
+  runs the same suite through the same build before publishing — no workflow change is needed, and
+  the ineffective `DOCKER_API_VERSION` env entries added during the second attempt are removed.
+- `build.sbt`: `testcontainersVersion` 0.41.4 → 0.43.0 is **kept but was not the fix** — a current
+  client is a better baseline to carry the pin on, and it resolves, compiles, and leaves the 215
+  non-container tests green.
+- No production code, no runtime behaviour, no API surface. Test infrastructure only.
+- **The pin is a workaround for a client default, not a fix for it.** Recorded as such, and bound
+  for AGENTS.md §8.
+- **Still unverified locally:** that the suites now *pass* against a real Engine. The advertised
+  version is measured; the handshake and the suites themselves need a daemon this machine does not
+  have (Finch is nerdctl/containerd with no Docker API, so it cannot host testcontainers). CI
+  answers that.
