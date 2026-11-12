@@ -24,7 +24,7 @@ jobs:
     name: Format (scalafmt)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-scala
       - name: Check formatting
         run: sbt -batch scalafmtCheckAll scalafmtSbtCheck
@@ -33,7 +33,7 @@ jobs:
     name: Compile & test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # sbt-dynver needs full history + tags
       - uses: ./.github/actions/setup-scala
@@ -56,7 +56,7 @@ jobs:
     name: Secret scan (gitleaks)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # scan the full history, not just the tip
       - uses: gitleaks/gitleaks-action@v2
@@ -69,7 +69,7 @@ jobs:
     name: Docs verification
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Verify docs
         run: bash scripts/verify-docs.sh
 
@@ -79,7 +79,7 @@ jobs:
     name: Version derivation (dynver)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: ./.github/actions/setup-scala
