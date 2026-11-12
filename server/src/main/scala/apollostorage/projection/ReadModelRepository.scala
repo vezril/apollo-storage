@@ -168,8 +168,12 @@ final class ReadModelRepository(cfg: PostgresConfig)(using ec: ExecutionContext)
   private def toFuture[A](mono: Mono[A]): Future[A] =
     val promise = Promise[A]()
     mono.subscribe(
-      (value: A) => { promise.trySuccess(value); () },
-      (err: Throwable) => { promise.tryFailure(err); () },
-      () => { promise.trySuccess(null.asInstanceOf[A]); () }
+      // The promise completes once; a later `try*` losing the race is expected, so the Boolean
+      // result is deliberately discarded rather than checked.
+      (value: A) => { val _ = promise.trySuccess(value) },
+      (err: Throwable) => { val _ = promise.tryFailure(err) },
+      // An empty Mono completes with no value, and Promise[A] has nothing else to offer it. Callers
+      // of this helper only await completion, so the value is never read.
+      () => { val _ = promise.trySuccess(null.asInstanceOf[A]) } // scalafix:ok DisableSyntax.null
     )
     promise.future

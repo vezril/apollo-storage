@@ -81,6 +81,14 @@ openspec new change "<name>"          # or: /opsx:propose
 Specs use `### Requirement:` (SHALL/MUST) and `#### Scenario:` — **exactly four hashes**, or the
 scenario is silently ignored. `openspec validate --changes` checks the format.
 
+**What CI gates.** Every PR into `development` or `main` must pass: scalafmt, `scalafixAll --check`
+(`DisableSyntax` + `OrganizeImports`), compile under **`-Werror`**, the full suite with coverage
+reported, docs verification, the dynver snapshot check, and a gitleaks secret scan. The release
+workflow additionally Trivy-scans the image and fails on a fixable `CRITICAL`. Two consequences
+worth knowing before you write code: **a warning is a build failure**, and a `null` needs either an
+`Option` or an explicit `// scalafix:ok DisableSyntax.null` — with *no trailing prose after the rule
+name*, which silently defeats the suppression.
+
 **Branches and releases.** `feature/*` (or `docs/*`) → PR into **`development`** → PR into
 **`main`**. `main` is protected: never push to it directly. A release is an annotated tag
 `vX.Y.Z` **on main**, which publishes `calvinference/apollostorage:X.Y.Z` to Docker Hub.
@@ -198,13 +206,12 @@ Known gaps, all deliberate:
   between 2026-08-28 and 2026-11-12. Note it is the `api.version` **system property**;
   `DOCKER_API_VERSION` is not read, so the obvious fix does nothing. This pin will need revisiting
   when the Engine floor moves again.
-- **CI has no static-analysis gate beyond formatting.** The four jobs are scalafmt, compile+test,
-  docs verification, and the dynver snapshot check — `sbt-scalafix` is declared in
-  `project/plugins.sbt` but nothing runs it, and there is no coverage floor, no `-Werror`, no
-  dependency scanning, and no Dependabot. **PR #24** (`feature/static-analysis`) adds all of that
-  and carries an unarchived OpenSpec change (`add-static-analysis`), but it has been open since
-  2026-07-10, predates three releases, and currently **conflicts** with `development`. Treat it as
-  a source to redo rather than a branch to merge.
+- **Coverage is reported, not gated.** `sbt-scoverage` runs in CI and the report is uploaded as an
+  artifact, but no `coverageMinimumStmtTotal` floor is set — the number is published so a floor can
+  be chosen from evidence rather than guessed. Setting it is the follow-up.
+- **Dependabot covers GitHub Actions only.** Dependabot has no `sbt` ecosystem, so Scala dependency
+  *version* updates need **Scala Steward** (not yet set up). Dependabot *security alerts* do still
+  cover the sbt dependency graph.
 - **`docs/ROADMAP.md`** holds the forward plan: console views, access-temperature tiering, cold-file
   compression, caching, duplicate detection, similar images. Note that dedup and similar-image work
   is designed to live at the **Artemis** layer, not here — Apollo stays the blob substrate.

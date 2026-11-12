@@ -22,8 +22,6 @@ final class BlobMetricsSpec
     with ScalaFutures
     with Eventually:
 
-  private given scala.concurrent.ExecutionContext = system.executionContext
-
   final private class RecordingSink extends BlobMetrics:
     val ops = new ConcurrentLinkedQueue[(String, String)]()
     val bytes = new ConcurrentLinkedQueue[(String, Long)]()

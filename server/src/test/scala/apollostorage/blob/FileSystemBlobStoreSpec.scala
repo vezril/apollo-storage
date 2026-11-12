@@ -29,9 +29,9 @@ final class FileSystemBlobStoreSpec
     store = FileSystemBlobStore(root)
 
   override protected def afterAll(): Unit =
-    if root != null then
+    Option(root).foreach: r =>
       Files
-        .walk(root)
+        .walk(r)
         .sorted(Comparator.reverseOrder())
         .iterator()
         .asScala

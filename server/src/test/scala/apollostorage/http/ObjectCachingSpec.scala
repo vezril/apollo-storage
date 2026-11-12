@@ -1,17 +1,17 @@
 package apollostorage.http
 
 import apollostorage.api.TokenAuthenticator
-import apollostorage.config.{AuthConfig, Scope}
+import apollostorage.config.AuthConfig
 import apollostorage.domain.*
 import apollostorage.projection.{ObjectRow, Page}
+import org.apache.pekko.http.scaladsl.model.StatusCodes
 import org.apache.pekko.http.scaladsl.model.headers.{
-  `Cache-Control`,
   ETag,
   EntityTag,
-  `If-None-Match`,
-  RawHeader
+  RawHeader,
+  `Cache-Control`,
+  `If-None-Match`
 }
-import org.apache.pekko.http.scaladsl.model.StatusCodes
 import org.apache.pekko.http.scaladsl.server.Route
 import org.apache.pekko.http.scaladsl.testkit.ScalatestRouteTest
 import org.apache.pekko.stream.scaladsl.Source

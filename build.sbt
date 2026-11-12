@@ -22,11 +22,20 @@ ThisBuild / scalacOptions ++= Seq(
   "-deprecation",
   "-feature",
   "-unchecked",
+  "-Werror", // warnings are build failures (static-analysis)
   "-Wunused:all",
   "-Wvalue-discard",
+  "-Wnonunit-statement",
+  // Silence warnings in pekko-grpc-generated sources (the vendored health stubs) — they can't be
+  // hand-fixed and would otherwise fail -Werror.
+  "-Wconf:src=.*pekko-grpc.*:s",
   "-source:3.3",
   "-Yretain-trees"
 )
+
+// SemanticDB so scalafix's semantic rules (DisableSyntax, OrganizeImports) run in CI.
+ThisBuild / semanticdbEnabled := true
+ThisBuild / semanticdbVersion := scalafixSemanticdb.revision
 
 // The Apollo gRPC contract is generated from the Lexicon, not a local .proto
 // (design adopt-lexicon-grpc-contracts, D46/D48). Resolve the published stubs from
@@ -64,6 +73,10 @@ lazy val commonSettings = Seq(
   Test / fork := true,
   Test / testForkedParallel := false,
   scalafmtOnCompile := false,
+  // Production code gets the full strict set; tests relax the two discard checks — ScalaTest
+  // matchers return `Assertion` and `.futureValue` results are routinely used for effect, so
+  // -Wnonunit-statement / -Wvalue-discard there is noise that fights the test DSL.
+  Test / scalacOptions --= Seq("-Wnonunit-statement", "-Wvalue-discard"),
   // docker-java advertises Engine API 1.32 unless told otherwise, and any current Docker Engine
   // rejects anything below 1.40 — which aborted every testcontainers suite with
   // "client version 1.32 is too old". The lever is docker-java's `api.version` *system property*;
