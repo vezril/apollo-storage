@@ -38,9 +38,26 @@
   pass, 215 tests green (core 32, server 183 non-container), `openspec validate --changes` and
   `scripts/verify-docs.sh` pass
 - [x] 5.2 Local: the advertised API version is **measured** as 1.43, not assumed
-- [ ] 5.3 **CI: the 8 suites run and pass instead of aborting.** What is proven locally is the
-  version the client sends; that the handshake succeeds and the suites are green needs a real
-  Engine. This machine has none — Finch is nerdctl/containerd with no Docker API, so it cannot host
-  testcontainers. `Compile & test` is the assertion
-- [ ] 5.4 AGENTS.md §8: record the pin as a known gap once CI confirms it — a hard-coded client
-  API version will need revisiting when the Engine floor moves again
+- [x] 5.3 **CI confirmed the fix.** 7 of 8 suites now run and pass — 198 tests, up from 183. The
+  handshake succeeds; the journal, projection, sharding and migration suites are exercising real
+  Postgres again for the first time since 2026-08-28
+
+## 6. The remaining suite — a separate breakage
+
+- [x] 6.1 `S3BlobStoreIT` still aborted, on an unrelated cause: `pull access denied for
+  minio/minio, repository does not exist`. `minio/minio` has been withdrawn from Docker Hub and
+  `quay.io/minio/minio` requires authentication. Other Docker Hub pulls (Postgres, Ryuk) work, so
+  this is specific to that image
+- [x] 6.2 **Parked, by decision.** Ignored at class level — the abort happens in the
+  `ForAllTestContainer` container-start lifecycle, before any test runs, so per-test ignores would
+  not stop it. Verified locally: the suite reports `aborted 0` and executes no tests instead of
+  failing the build
+- [x] 6.3 The suite body and its reasoning are left intact, with a header explaining why the
+  replacement is a judgement call rather than a swap: it covers path-style addressing, streaming
+  multipart put with checksum verification, and ETag/md5 against a *real* S3 implementation, which
+  is what QuObjects is in production. `adobe/s3mock` may diverge on those edges; `localstack` is
+  closer but slower; authenticating the MinIO pull keeps the test identical
+- [ ] 6.4 AGENTS.md §8: record both gaps — the `api.version` pin (a hard-coded client API version
+  that will need revisiting when the Engine floor moves again) and **the S3 backend having no
+  integration coverage** until a replacement image is chosen. Landing on #39, which already
+  rewrites §8, to avoid a conflict with this branch

@@ -17,7 +17,21 @@ import org.testcontainers.containers.wait.strategy.Wait
 /**
  * S3 backend against a MinIO testcontainer (add-s3-backend-and-rest-api §3–§4): streaming multipart
  * put with checksum verification, streamed get, delete, and the list-based reconciliation surface.
+ *
+ * ==PARKED — the S3 backend currently has no integration coverage==
+ *
+ * `minio/minio` has been withdrawn from Docker Hub (the repository 404s) and `quay.io/minio/minio`
+ * requires authentication, so this suite can no longer pull its container and aborted the whole
+ * build at container start — before any test ran, which is why the suite is ignored at class level
+ * rather than per-test.
+ *
+ * The fix is a deliberate choice, not a swap: this suite exists to check path-style addressing,
+ * streaming multipart put with checksum verification, and ETag/md5 semantics against a *real* S3
+ * implementation, because that is what QuObjects is in production. A mock (`adobe/s3mock`) may
+ * diverge on exactly those edges; `localstack` is closer but slower. Picking one, or authenticating
+ * the MinIO pull, is tracked in AGENTS.md §8 — do not quietly delete this suite instead.
  */
+@org.scalatest.Ignore
 final class S3BlobStoreIT
     extends AnyWordSpec
     with Matchers
