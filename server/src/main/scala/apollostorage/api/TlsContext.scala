@@ -32,5 +32,7 @@ object TlsContext:
     val kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm)
     kmf.init(keyStore, password)
     val sslContext = SSLContext.getInstance("TLS")
-    sslContext.init(kmf.getKeyManagers, null, new SecureRandom)
+    // A null TrustManager array is the JSSE contract for "use the platform default trust store" —
+    // it is not a trust-all manager, and there is no Option-shaped alternative in this API.
+    sslContext.init(kmf.getKeyManagers, null, new SecureRandom) // scalafix:ok DisableSyntax.null
     ConnectionContext.httpsServer(sslContext)

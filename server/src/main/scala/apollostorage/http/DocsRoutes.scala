@@ -1,7 +1,7 @@
 package apollostorage.http
 
 import org.apache.pekko.http.scaladsl.model.*
-import org.apache.pekko.http.scaladsl.model.headers.{`Cache-Control`, CacheDirectives}
+import org.apache.pekko.http.scaladsl.model.headers.{CacheDirectives, `Cache-Control`}
 import org.apache.pekko.http.scaladsl.server.Directives.*
 import org.apache.pekko.http.scaladsl.server.Route
 

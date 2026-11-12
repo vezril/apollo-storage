@@ -81,6 +81,14 @@ openspec new change "<name>"          # or: /opsx:propose
 Specs use `### Requirement:` (SHALL/MUST) and `#### Scenario:` — **exactly four hashes**, or the
 scenario is silently ignored. `openspec validate --changes` checks the format.
 
+**What CI gates.** Every PR into `development` or `main` must pass: scalafmt, `scalafixAll --check`
+(`DisableSyntax` + `OrganizeImports`), compile under **`-Werror`**, the full suite with coverage
+reported, docs verification, the dynver snapshot check, and a gitleaks secret scan. The release
+workflow additionally Trivy-scans the image and fails on a fixable `CRITICAL`. Two consequences
+worth knowing before you write code: **a warning is a build failure**, and a `null` needs either an
+`Option` or an explicit `// scalafix:ok DisableSyntax.null` — with *no trailing prose after the rule
+name*, which silently defeats the suppression.
+
 **Branches and releases.** `feature/*` (or `docs/*`) → PR into **`development`** → PR into
 **`main`**. `main` is protected: never push to it directly. A release is an annotated tag
 `vX.Y.Z` **on main**, which publishes `calvinference/apollostorage:X.Y.Z` to Docker Hub.
@@ -162,11 +170,20 @@ HOCON with env overrides (`server/src/main/resources/application.conf`). The one
 
 ## 8. Current state and known gaps
 
-*(as of 2026-08-25 — update this section when it stops being true)*
+*(as of 2026-11-12 — update this section when it stops being true)*
 
-- Released **v0.12.1**; deployed and verified against live QuObjects (REST + gRPC round-trips).
+- Latest release is **v0.14.0** (tagged on `main` 2026-08-28). History lives in
+  `openspec/changes/archive/`; each release PR into `main` carries the verification record.
 - Recent changes: request tracing (v0.11.0), S3 backend + REST API (v0.12.0), k8s discovery fix
-  (v0.12.1). History lives in `openspec/changes/archive/`.
+  (v0.12.1), self-served API docs portal and this handoff file (v0.13.0), OpenSpec `## Purpose`
+  sections — docs only (v0.13.1), HTTP cache validation on the object API and `/docs` (v0.14.0).
+- **What version the cluster is actually running is not recorded here** — this repo cannot know it.
+  Check the HelmRelease pin in **codex** (`apps/apollo`), or ask. Two things to carry into that
+  check: v0.13.1 was deliberately *not* rolled (docs-only; its image is functionally identical to
+  `0.13.0`), and v0.14.0 *does* change runtime behaviour — the response headers on every object read
+  and on `/docs` — so it is a roll that matters.
+- The last recorded live verification against QuObjects (REST + gRPC round-trips) was at **v0.12.1**.
+  v0.13.0 and v0.14.0 were verified against a local instance, not the NAS.
 
 Known gaps, all deliberate:
 
@@ -175,6 +192,26 @@ Known gaps, all deliberate:
 - **Discovery pod-label selector is hard-coded** to the chart's labels; a `POD_LABEL_SELECTOR` knob
   is a filed follow-up. A mismatch here silently prevents the cluster from forming.
 - **The documented-surface inventory is manual** (see §5).
+- **The S3 blob backend has no integration coverage.** `S3BlobStoreIT` is ignored at class level:
+  `minio/minio` has been withdrawn from Docker Hub and `quay.io/minio/minio` needs authentication,
+  so it can no longer pull its container — and the abort happened at container start, taking the
+  whole build with it. The suite body is intact and explains the trade-off; picking a replacement is
+  a real decision, not a swap, because it checks path-style addressing, streaming multipart put with
+  checksum verification, and ETag/md5 against a *real* S3 — which is what QuObjects is in
+  production. `adobe/s3mock` may diverge on those edges, `localstack` is closer but slower, and
+  authenticating the MinIO pull would keep the test identical. **Do not delete the suite instead.**
+- **The Docker Engine API version is hard-coded for tests.** `build.sbt` sets
+  `Test / javaOptions += "-Dapi.version=1.43"` because docker-java otherwise advertises 1.32 and
+  every current Engine rejects anything below 1.40 — which silently aborted all 8 integration suites
+  between 2026-08-28 and 2026-11-12. Note it is the `api.version` **system property**;
+  `DOCKER_API_VERSION` is not read, so the obvious fix does nothing. This pin will need revisiting
+  when the Engine floor moves again.
+- **Coverage is reported, not gated.** `sbt-scoverage` runs in CI and the report is uploaded as an
+  artifact, but no `coverageMinimumStmtTotal` floor is set — the number is published so a floor can
+  be chosen from evidence rather than guessed. Setting it is the follow-up.
+- **Dependabot covers GitHub Actions only.** Dependabot has no `sbt` ecosystem, so Scala dependency
+  *version* updates need **Scala Steward** (not yet set up). Dependabot *security alerts* do still
+  cover the sbt dependency graph.
 - **`docs/ROADMAP.md`** holds the forward plan: console views, access-temperature tiering, cold-file
   compression, caching, duplicate detection, similar images. Note that dedup and similar-image work
   is designed to live at the **Artemis** layer, not here — Apollo stays the blob substrate.

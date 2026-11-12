@@ -9,12 +9,12 @@ import apollostorage.tracing.CorrelationId
 import org.apache.pekko.http.scaladsl.marshallers.sprayjson.SprayJsonSupport
 import org.apache.pekko.http.scaladsl.model.*
 import org.apache.pekko.http.scaladsl.model.headers.{
-  `Cache-Control`,
   CacheDirectives,
   ETag,
   EntityTag,
-  `If-None-Match`,
-  RawHeader
+  RawHeader,
+  `Cache-Control`,
+  `If-None-Match`
 }
 import org.apache.pekko.http.scaladsl.server.Directives.*
 import org.apache.pekko.http.scaladsl.server.{ExceptionHandler, Route}

@@ -4,9 +4,9 @@ import apollostorage.grpc.{ObjectApi, ObjectApiPowerApi, ObjectApiPowerApiHandle
 import grpc.health.v1.{Health, HealthHandler}
 import org.apache.pekko.actor.typed.ActorSystem
 import org.apache.pekko.grpc.scaladsl.{ServerReflection, ServiceHandler}
-import org.apache.pekko.http.scaladsl.{Http, HttpsConnectionContext}
 import org.apache.pekko.http.scaladsl.Http.ServerBinding
 import org.apache.pekko.http.scaladsl.model.{HttpRequest, HttpResponse}
+import org.apache.pekko.http.scaladsl.{Http, HttpsConnectionContext}
 
 import scala.concurrent.Future
 

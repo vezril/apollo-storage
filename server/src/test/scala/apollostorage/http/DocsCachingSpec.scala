@@ -2,9 +2,9 @@ package apollostorage.http
 
 import org.apache.pekko.http.scaladsl.model.StatusCodes
 import org.apache.pekko.http.scaladsl.model.headers.{
-  `Cache-Control`,
   ETag,
   EntityTag,
+  `Cache-Control`,
   `If-None-Match`
 }
 import org.apache.pekko.http.scaladsl.server.Route

@@ -26,7 +26,8 @@ final class DocsPackagingSpec extends AnyWordSpec with Matchers:
       if Files.exists(dir.resolve("docs/rest-api.openapi.yaml")) then dir
       else
         val parent = dir.getParent
-        if parent == null then
+        // Path.getParent returns null at the filesystem root — this is the null *check*.
+        if parent == null then // scalafix:ok DisableSyntax.null
           fail("could not locate the repository root (no docs/rest-api.openapi.yaml above cwd)")
         else up(parent)
     up(Paths.get("").toAbsolutePath)

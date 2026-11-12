@@ -2,20 +2,20 @@ package apollostorage.blob
 
 import apollostorage.config.S3Config
 import apollostorage.domain.{BlobRef, BucketName, Checksums}
+import org.apache.pekko.Done
 import org.apache.pekko.actor.typed.ActorSystem
 import org.apache.pekko.http.scaladsl.{ConnectionContext, Http}
 import org.apache.pekko.stream.connectors.s3.scaladsl.S3
 import org.apache.pekko.stream.connectors.s3.{AccessStyle, S3Attributes, S3Ext, S3Settings}
 import org.apache.pekko.stream.scaladsl.{Flow, Sink, Source}
 import org.apache.pekko.util.ByteString
-import org.apache.pekko.{Done, NotUsed}
 import software.amazon.awssdk.auth.credentials.{AwsBasicCredentials, StaticCredentialsProvider}
 import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.regions.providers.AwsRegionProvider
 
 import java.nio.file.{Files, Paths}
-import java.security.{KeyStore, MessageDigest, SecureRandom}
 import java.security.cert.X509Certificate
+import java.security.{KeyStore, MessageDigest, SecureRandom}
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 import java.util.zip.CRC32C
