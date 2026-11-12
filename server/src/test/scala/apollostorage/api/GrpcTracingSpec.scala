@@ -1,8 +1,8 @@
 package apollostorage.api
 
 import apollostorage.tracing.CorrelationId
-import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.classic.Logger as LogbackLogger
+import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
 import org.apache.pekko.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import org.apache.pekko.http.scaladsl.model.headers.RawHeader

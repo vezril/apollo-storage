@@ -3,10 +3,9 @@ package apollostorage.http
 import org.apache.pekko.Done
 import org.apache.pekko.actor.CoordinatedShutdown
 import org.apache.pekko.actor.typed.ActorSystem
-import org.apache.pekko.http.scaladsl.Http
 import org.apache.pekko.http.scaladsl.Http.ServerBinding
-import org.apache.pekko.http.scaladsl.HttpsConnectionContext
 import org.apache.pekko.http.scaladsl.server.Route
+import org.apache.pekko.http.scaladsl.{Http, HttpsConnectionContext}
 
 import java.util.concurrent.atomic.AtomicBoolean
 import scala.concurrent.Future
@@ -47,5 +46,4 @@ object HttpServer:
       readiness.set(false)
       Future.successful(Done)
     }
-    binding.addToCoordinatedShutdown(hardTerminationDeadline = 10.seconds)
-    ()
+    val _ = binding.addToCoordinatedShutdown(hardTerminationDeadline = 10.seconds)
