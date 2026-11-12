@@ -55,7 +55,7 @@ lazy val pekkoR2dbcVersion = "1.1.0"
 lazy val pekkoProjectionVersion = "1.1.0"
 lazy val pekkoManagementVersion = "1.2.1"
 lazy val scalaTestVersion = "3.2.19"
-lazy val testcontainersVersion = "0.41.4"
+lazy val testcontainersVersion = "0.43.0"
 lazy val logbackVersion = "1.5.12"
 lazy val prometheusVersion = "0.16.0"
 
