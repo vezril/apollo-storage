@@ -162,11 +162,20 @@ HOCON with env overrides (`server/src/main/resources/application.conf`). The one
 
 ## 8. Current state and known gaps
 
-*(as of 2026-08-25 — update this section when it stops being true)*
+*(as of 2026-11-12 — update this section when it stops being true)*
 
-- Released **v0.12.1**; deployed and verified against live QuObjects (REST + gRPC round-trips).
+- Latest release is **v0.14.0** (tagged on `main` 2026-08-28). History lives in
+  `openspec/changes/archive/`; each release PR into `main` carries the verification record.
 - Recent changes: request tracing (v0.11.0), S3 backend + REST API (v0.12.0), k8s discovery fix
-  (v0.12.1). History lives in `openspec/changes/archive/`.
+  (v0.12.1), self-served API docs portal and this handoff file (v0.13.0), OpenSpec `## Purpose`
+  sections — docs only (v0.13.1), HTTP cache validation on the object API and `/docs` (v0.14.0).
+- **What version the cluster is actually running is not recorded here** — this repo cannot know it.
+  Check the HelmRelease pin in **codex** (`apps/apollo`), or ask. Two things to carry into that
+  check: v0.13.1 was deliberately *not* rolled (docs-only; its image is functionally identical to
+  `0.13.0`), and v0.14.0 *does* change runtime behaviour — the response headers on every object read
+  and on `/docs` — so it is a roll that matters.
+- The last recorded live verification against QuObjects (REST + gRPC round-trips) was at **v0.12.1**.
+  v0.13.0 and v0.14.0 were verified against a local instance, not the NAS.
 
 Known gaps, all deliberate:
 
@@ -175,6 +184,27 @@ Known gaps, all deliberate:
 - **Discovery pod-label selector is hard-coded** to the chart's labels; a `POD_LABEL_SELECTOR` knob
   is a filed follow-up. A mismatch here silently prevents the cluster from forming.
 - **The documented-surface inventory is manual** (see §5).
+- **The S3 blob backend has no integration coverage.** `S3BlobStoreIT` is ignored at class level:
+  `minio/minio` has been withdrawn from Docker Hub and `quay.io/minio/minio` needs authentication,
+  so it can no longer pull its container — and the abort happened at container start, taking the
+  whole build with it. The suite body is intact and explains the trade-off; picking a replacement is
+  a real decision, not a swap, because it checks path-style addressing, streaming multipart put with
+  checksum verification, and ETag/md5 against a *real* S3 — which is what QuObjects is in
+  production. `adobe/s3mock` may diverge on those edges, `localstack` is closer but slower, and
+  authenticating the MinIO pull would keep the test identical. **Do not delete the suite instead.**
+- **The Docker Engine API version is hard-coded for tests.** `build.sbt` sets
+  `Test / javaOptions += "-Dapi.version=1.43"` because docker-java otherwise advertises 1.32 and
+  every current Engine rejects anything below 1.40 — which silently aborted all 8 integration suites
+  between 2026-08-28 and 2026-11-12. Note it is the `api.version` **system property**;
+  `DOCKER_API_VERSION` is not read, so the obvious fix does nothing. This pin will need revisiting
+  when the Engine floor moves again.
+- **CI has no static-analysis gate beyond formatting.** The four jobs are scalafmt, compile+test,
+  docs verification, and the dynver snapshot check — `sbt-scalafix` is declared in
+  `project/plugins.sbt` but nothing runs it, and there is no coverage floor, no `-Werror`, no
+  dependency scanning, and no Dependabot. **PR #24** (`feature/static-analysis`) adds all of that
+  and carries an unarchived OpenSpec change (`add-static-analysis`), but it has been open since
+  2026-07-10, predates three releases, and currently **conflicts** with `development`. Treat it as
+  a source to redo rather than a branch to merge.
 - **`docs/ROADMAP.md`** holds the forward plan: console views, access-temperature tiering, cold-file
   compression, caching, duplicate detection, similar images. Note that dedup and similar-image work
   is designed to live at the **Artemis** layer, not here — Apollo stays the blob substrate.
