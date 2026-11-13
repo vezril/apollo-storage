@@ -68,6 +68,37 @@ lazy val testcontainersVersion = "0.43.0"
 lazy val logbackVersion = "1.5.12"
 lazy val prometheusVersion = "0.16.0"
 
+// Netty arrives transitively (gRPC/HTTP machinery), and 4.1.112.Final carries
+// CVE-2026-75595 — a CRITICAL SNI routing bypass via a fragmented TLS ClientHello, which the
+// release Trivy scan correctly refused to publish. Apollo terminates TLS and serves gRPC, so this
+// is on a live path, not dormant.
+//
+// Overridden as a whole set, not just netty-handler: Netty does not support a mixed-version
+// classpath any more than Pekko does, and 14 artifacts resolve here. Staying on the 4.1.x line
+// (4.1.137.Final) rather than jumping to 4.2.x keeps this a patch-level change.
+lazy val nettyVersion = "4.1.137.Final"
+lazy val nettyOverrides = Seq(
+  "netty-buffer",
+  "netty-codec",
+  "netty-codec-dns",
+  "netty-codec-http",
+  "netty-codec-socks",
+  "netty-common",
+  "netty-handler",
+  "netty-handler-proxy",
+  "netty-resolver",
+  "netty-resolver-dns",
+  "netty-resolver-dns-classes-macos",
+  "netty-transport",
+  "netty-transport-classes-epoll",
+  "netty-transport-native-unix-common",
+  // The two native, classifier-carrying artifacts. They are not the vulnerable module, but they
+  // ship JNI binaries that pair with the Java classes above — epoll is the one that actually runs
+  // in the Linux image, so leaving it a minor behind the core is a real skew, not a cosmetic one.
+  "netty-transport-native-epoll",
+  "netty-resolver-dns-native-macos"
+).map(a => "io.netty" % a % nettyVersion)
+
 // Fork tests so Pekko/JVM system properties and testcontainers behave predictably.
 lazy val commonSettings = Seq(
   Test / fork := true,
@@ -83,7 +114,8 @@ lazy val commonSettings = Seq(
   // the DOCKER_API_VERSION environment variable is NOT read (measured: with the env var set the
   // client still requested /v1.32/info; with this property it requests /v1.43/info). Tests are
   // forked, so it has to be a Test/javaOption rather than an sbt JVM flag.
-  Test / javaOptions += "-Dapi.version=1.43"
+  Test / javaOptions += "-Dapi.version=1.43",
+  dependencyOverrides ++= nettyOverrides
 )
 
 lazy val root = (project in file("."))
