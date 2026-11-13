@@ -7,11 +7,19 @@
 - [x] 1.2 Weigh LocalStack vs `adobe/s3mock` vs authenticating the MinIO pull against what the suite
   proves — path-style, streaming multipart with checksum verification, ETag/md5 — and choose
   LocalStack for reimplementing S3 rather than stubbing it
-- [x] 1.3 Pin a concrete tag (`2026.10.7`) rather than `:latest`
+- [x] 1.3 Pin a concrete tag rather than `:latest`
+- [x] 1.4 **First pin (`2026.10.7`) was wrong — caught by CI, then reproduced locally.** LocalStack's
+  2026.x images refuse to start without a paid `LOCALSTACK_AUTH_TOKEN`: "License activation failed",
+  exit code 55. The container never booted, so this was never a semantics problem
+- [x] 1.5 Repinned to **`4.0.3`**, which predates the licence gate. Verified locally under finch:
+  boots to `Ready.` with zero licence errors, health returns 200, `s3: available`, ListBuckets
+  answers. Documented in the suite that this pin is a dead branch — a 2024 build of a now-licensed
+  product — with `adobe/s3mock` named as the fallback
 
 ## 2. Restore the suite
 
 - [x] 2.1 Swap the container: edge port 4566, `SERVICES=s3`, health wait on `/_localstack/health`
+  (endpoint confirmed by hand against 4.0.3, not assumed from docs)
 - [x] 2.2 Remove the class-level `@Ignore`
 - [x] 2.3 Factor the duplicated `S3Config` into one `s3Config(bucket)` helper
 - [x] 2.4 Raise `patienceConfig` 30s → 60s for the slower boot

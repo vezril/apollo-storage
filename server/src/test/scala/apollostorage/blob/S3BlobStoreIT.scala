@@ -29,8 +29,9 @@ import org.testcontainers.containers.wait.strategy.Wait
  * match in production. LocalStack reimplements S3 semantics rather than stubbing them, which is why
  * it was chosen over `adobe/s3mock` despite a slower start.
  *
- * The tag is pinned deliberately. `:latest` on a test container makes the suite silently
- * time-dependent, and this suite has already been broken once by an upstream image decision.
+ * The tag is pinned deliberately, and pinned *old* — see the comment on the image below. `:latest`
+ * on a test container makes the suite silently time-dependent, and this suite has already been
+ * broken once by an upstream image decision; a current LocalStack tag would break it a second time.
  */
 final class S3BlobStoreIT
     extends AnyWordSpec
@@ -46,7 +47,15 @@ final class S3BlobStoreIT
   private val SecretKey = "test"
 
   override val container: GenericContainer = GenericContainer(
-    "localstack/localstack:2026.10.7",
+    // 4.0.3 and NOT a current tag: LocalStack's 2026.x images refuse to start without a paid
+    // LOCALSTACK_AUTH_TOKEN ("License activation failed", exit 55). 4.0.3 predates that gate and
+    // boots free — verified locally: health 200, `s3: available`, ListBuckets answers.
+    //
+    // This pin will rot. It is a 2024 build of a product that has since moved behind a licence, so
+    // it will never see another update. That is tolerable for a test-only dependency but it is a
+    // dead branch, not a resting place. If it ever breaks, `adobe/s3mock` is the fallback — faster
+    // and maintained, at the cost of being a mock rather than a reimplementation.
+    "localstack/localstack:4.0.3",
     exposedPorts = Seq(EdgePort),
     env = Map("SERVICES" -> "s3", "EAGER_SERVICE_LOADING" -> "1"),
     waitStrategy = Wait.forHttp("/_localstack/health").forPort(EdgePort).forStatusCode(200)
