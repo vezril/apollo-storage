@@ -23,4 +23,6 @@
 - [x] 3.2 Gates clean: `-Werror` compile, `scalafixAll --check`, `scalafmtCheckAll`
 - [x] 3.3 215 non-container tests green locally
 - [x] 3.4 CI: gRPC and TLS integration suites pass against the new Netty — green on #50
-- [ ] 3.5 Release: the Trivy scan comes back clean and the image publishes
+- [x] 3.5 Release: the Trivy scan comes back clean and the image publishes — v0.16.0, scan clean
+  with zero CRITICALs, `calvinference/apollostorage:0.16.0` published and `latest` moved. First
+  successful publish since 2026-08-28
