@@ -82,12 +82,14 @@ Specs use `### Requirement:` (SHALL/MUST) and `#### Scenario:` — **exactly fou
 scenario is silently ignored. `openspec validate --changes` checks the format.
 
 **What CI gates.** Every PR into `development` or `main` must pass: scalafmt, `scalafixAll --check`
-(`DisableSyntax` + `OrganizeImports`), compile under **`-Werror`**, the full suite with coverage
-reported, docs verification, the dynver snapshot check, and a gitleaks secret scan. The release
-workflow additionally Trivy-scans the image and fails on a fixable `CRITICAL`. Two consequences
-worth knowing before you write code: **a warning is a build failure**, and a `null` needs either an
-`Option` or an explicit `// scalafix:ok DisableSyntax.null` — with *no trailing prose after the rule
-name*, which silently defeats the suppression.
+(`DisableSyntax` + `OrganizeImports`), compile under **`-Werror`**, the full suite **with coverage
+above a per-module floor**, docs verification, the dynver snapshot check, and a gitleaks secret scan.
+The release workflow additionally Trivy-scans the image and fails on a fixable `CRITICAL` — it has
+blocked a release already, correctly. Three consequences worth knowing before you write code:
+**a warning is a build failure**; a `null` needs either an `Option` or an explicit
+`// scalafix:ok DisableSyntax.null` — with *no trailing prose after the rule name*, which silently
+defeats the suppression; and **dropping coverage fails the build**, so new code arrives with tests
+or not at all.
 
 **Branches and releases.** `feature/*` (or `docs/*`) → PR into **`development`** → PR into
 **`main`**. `main` is protected: never push to it directly. A release is an annotated tag
@@ -170,13 +172,18 @@ HOCON with env overrides (`server/src/main/resources/application.conf`). The one
 
 ## 8. Current state and known gaps
 
-*(as of 2026-11-12 — update this section when it stops being true)*
+*(as of 2026-11-13 — update this section when it stops being true)*
 
-- Latest release is **v0.14.0** (tagged on `main` 2026-08-28). History lives in
-  `openspec/changes/archive/`; each release PR into `main` carries the verification record.
+- Latest release is **v0.14.0** (tagged on `main` 2026-08-28). **`v0.15.0` is tagged but publishes
+  nothing**: its release run was blocked first by a removed GitHub Action ref and then, on re-cut, by
+  the Trivy scan finding CVE-2026-75595. The CVE is fixed on `development`, so the tag now predates
+  its own fix — releasing needs either a re-cut or a forward version. No `0.15.0` image exists on
+  Docker Hub.
 - Recent changes: request tracing (v0.11.0), S3 backend + REST API (v0.12.0), k8s discovery fix
   (v0.12.1), self-served API docs portal and this handoff file (v0.13.0), OpenSpec `## Purpose`
   sections — docs only (v0.13.1), HTTP cache validation on the object API and `/docs` (v0.14.0).
+  Unreleased on `development`: CI static-analysis gates, repaired integration tests, the Netty CVE
+  fix, restored S3 coverage, and a coverage floor.
 - **What version the cluster is actually running is not recorded here** — this repo cannot know it.
   Check the HelmRelease pin in **codex** (`apps/apollo`), or ask. Two things to carry into that
   check: v0.13.1 was deliberately *not* rolled (docs-only; its image is functionally identical to
@@ -184,6 +191,10 @@ HOCON with env overrides (`server/src/main/resources/application.conf`). The one
   and on `/docs` — so it is a roll that matters.
 - The last recorded live verification against QuObjects (REST + gRPC round-trips) was at **v0.12.1**.
   v0.13.0 and v0.14.0 were verified against a local instance, not the NAS.
+- **The integration suites were silently not running between 2026-08-28 and 2026-11-13.** All 8
+  aborted because docker-java advertises Engine API 1.32 and current Docker Engines refuse anything
+  below 1.40. Nothing in the repo changed to cause it and no PR was opened in that window, so nobody
+  saw it. Current state: 237 tests, `aborted 0`; coverage core 96.88%, server 72.61%.
 
 Known gaps, all deliberate:
 
@@ -192,26 +203,35 @@ Known gaps, all deliberate:
 - **Discovery pod-label selector is hard-coded** to the chart's labels; a `POD_LABEL_SELECTOR` knob
   is a filed follow-up. A mismatch here silently prevents the cluster from forming.
 - **The documented-surface inventory is manual** (see §5).
-- **The S3 blob backend has no integration coverage.** `S3BlobStoreIT` is ignored at class level:
-  `minio/minio` has been withdrawn from Docker Hub and `quay.io/minio/minio` needs authentication,
-  so it can no longer pull its container — and the abort happened at container start, taking the
-  whole build with it. The suite body is intact and explains the trade-off; picking a replacement is
-  a real decision, not a swap, because it checks path-style addressing, streaming multipart put with
-  checksum verification, and ETag/md5 against a *real* S3 — which is what QuObjects is in
-  production. `adobe/s3mock` may diverge on those edges, `localstack` is closer but slower, and
-  authenticating the MinIO pull would keep the test identical. **Do not delete the suite instead.**
+- **The LocalStack pin is a dead branch.** `S3BlobStoreIT` runs again, but on
+  `localstack/localstack:4.0.3` — a 2024 build. LocalStack's current images refuse to start without
+  a paid `LOCALSTACK_AUTH_TOKEN` ("License activation failed", exit 55), so 4.0.3 is pinned precisely
+  because it predates that gate and will therefore never be updated. Tolerable for a test-only
+  dependency; not a resting place. `adobe/s3mock` is the fallback, at the cost of being a mock rather
+  than a reimplementation — which matters, because that suite exists to check multipart, checksum and
+  ETag/md5 behaviour against something that behaves like real S3.
+- **Netty is pinned by `dependencyOverrides`,** all 16 artifacts at `4.1.137.Final`, to clear
+  CVE-2026-75595. Pekko pulls 4.1.112 transitively, so removing the override reintroduces the CVE.
+  Bump the whole set together — a mixed-version Netty classpath is its own bug.
 - **The Docker Engine API version is hard-coded for tests.** `build.sbt` sets
   `Test / javaOptions += "-Dapi.version=1.43"` because docker-java otherwise advertises 1.32 and
   every current Engine rejects anything below 1.40 — which silently aborted all 8 integration suites
   between 2026-08-28 and 2026-11-12. Note it is the `api.version` **system property**;
   `DOCKER_API_VERSION` is not read, so the obvious fix does nothing. This pin will need revisiting
   when the Engine floor moves again.
-- **Coverage is reported, not gated.** `sbt-scoverage` runs in CI and the report is uploaded as an
-  artifact, but no `coverageMinimumStmtTotal` floor is set — the number is published so a floor can
-  be chosen from evidence rather than guessed. Setting it is the follow-up.
-- **Dependabot covers GitHub Actions only.** Dependabot has no `sbt` ecosystem, so Scala dependency
-  *version* updates need **Scala Steward** (not yet set up). Dependabot *security alerts* do still
-  cover the sbt dependency graph.
+- **The coverage floors are low and should rise.** Gated at core **90** (measured 96.88%) and server
+  **70** (measured 72.61%), statement only — server *branch* coverage is 56.74% and is ungated.
+  Note core measures 96.88% under the whole-build run but 92.97% from `core/test` alone, because
+  server tests also exercise core classes; the floor sits below both on purpose, so it cannot fire
+  based on which command someone typed. Raise these as coverage improves — a floor that never moves
+  is a comment.
+- **Dependabot covers GitHub Actions only.** It has no `sbt` ecosystem, so Scala dependency *version*
+  updates need **Scala Steward** (not yet set up); Dependabot *security alerts* do still cover the
+  sbt graph. Its PRs do now build: they receive no repository secrets, so `LEXICON_TOKEN` is empty
+  there, and the workflows pass `GITHUB_TOKEN` as the fallback `build.sbt` already had. **No PAT is
+  required** — the `io.codex.lexicon-*` packages are public and the Maven endpoint wants
+  authentication, not authorization for the package's own repo. The older comment claiming otherwise
+  was wrong and is corrected; verified by blanking `LEXICON_TOKEN` and watching CI still resolve.
 - **`docs/ROADMAP.md`** holds the forward plan: console views, access-temperature tiering, cold-file
   compression, caching, duplicate detection, similar images. Note that dedup and similar-image work
   is designed to live at the **Artemis** layer, not here — Apollo stays the blob substrate.

@@ -57,7 +57,7 @@
   multipart put with checksum verification, and ETag/md5 against a *real* S3 implementation, which
   is what QuObjects is in production. `adobe/s3mock` may diverge on those edges; `localstack` is
   closer but slower; authenticating the MinIO pull keeps the test identical
-- [ ] 6.4 AGENTS.md §8: record both gaps — the `api.version` pin (a hard-coded client API version
+- [x] 6.4 AGENTS.md §8: record both gaps — the `api.version` pin (a hard-coded client API version
   that will need revisiting when the Engine floor moves again) and **the S3 backend having no
   integration coverage** until a replacement image is chosen. Landing on #39, which already
   rewrites §8, to avoid a conflict with this branch

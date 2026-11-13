@@ -29,7 +29,9 @@
 ## 3. Verify
 
 - [x] 3.1 `Test/compile`, `scalafixAll --check`, `scalafmtCheckAll` clean
-- [ ] 3.2 **CI: all seven assertions pass against LocalStack.** Not checkable locally — no container
+- [x] 3.2 **CI: all seven assertions pass against LocalStack** (4.0.3) — green on #51, 237 tests, `aborted 0`. Original claim stands: Not checkable locally — no container
   runtime on this machine. This is the whole question of the change, so CI is the verdict
-- [ ] 3.3 Record the new server coverage number, then set `coverageMinimumStmtTotal` from it
-- [ ] 3.4 AGENTS.md §8: drop the "S3 blob backend has no integration coverage" gap
+- [x] 3.3 Record the new server coverage number (66.49% → **72.61%**) and set
+  `coverageMinimumStmtTotal` from it — done as `add-coverage-floor`
+- [x] 3.4 AGENTS.md §8: drop the "S3 blob backend has no integration coverage" gap, replaced by
+  the LocalStack pin-rot note
