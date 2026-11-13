@@ -130,6 +130,12 @@ lazy val core = (project in file("core"))
   .settings(commonSettings)
   .settings(
     name := "apollostorage-core",
+    // Measures 96.88% under CI's whole-build `coverage test coverageReport`, but only 92.97% from
+    // `core/test` alone — server tests also exercise core classes, so the number depends on how it
+    // is invoked. The floor is set below *both* so it cannot fire spuriously on whichever command
+    // someone happens to run; 95 looked right against the CI figure and broke `core/test`.
+    coverageMinimumStmtTotal := 90,
+    coverageFailOnMinimum := true,
     libraryDependencies ++= Seq(
       "org.scalatest" %% "scalatest" % scalaTestVersion % Test,
       "org.scalatestplus" %% "scalacheck-1-18" % "3.2.19.0" % Test,
@@ -144,6 +150,16 @@ lazy val server = (project in file("server"))
   .settings(commonSettings)
   .settings(
     name := "apollostorage-server",
+    // Measured 72.61% once S3BlobStoreIT was restored (it was 66.49% while that suite was parked —
+    // which is why this floor was deliberately set *after* the restoration, not before, or it would
+    // have been pinned six points low). 70 leaves room for the integration suites' run-to-run
+    // variation without being decorative.
+    //
+    // Statement only, on purpose. Branch coverage here is 56.74%, and gating two correlated metrics
+    // doubles the false-failure surface for little extra signal. Raise this as coverage improves;
+    // a floor that never moves is just a comment.
+    coverageMinimumStmtTotal := 70,
+    coverageFailOnMinimum := true,
     Compile / mainClass := Some("apollostorage.Main"),
     // The Apollo object API stubs come from the Lexicon artifact; the only .proto
     // generated locally is the standard health service (design D47). The plugin
