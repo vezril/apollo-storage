@@ -39,9 +39,14 @@ ThisBuild / semanticdbVersion := scalafixSemanticdb.revision
 
 // The Apollo gRPC contract is generated from the Lexicon, not a local .proto
 // (design adopt-lexicon-grpc-contracts, D46/D48). Resolve the published stubs from
-// GitHub Packages; auth with a read:packages token in LEXICON_TOKEN (or GITHUB_TOKEN),
-// supplied as a repo secret in CI. Maven reads of GitHub Packages need auth even for
-// public packages, and the built-in CI token cannot read another repo's package.
+// GitHub Packages. Maven reads of GitHub Packages need authentication even for a public package —
+// an anonymous read is a 401 — but they do NOT need a PAT: the `io.codex.lexicon-*` packages are
+// public, and the endpoint wants authentication rather than authorization for the package's own
+// repository, so the built-in GITHUB_TOKEN is sufficient. Verified in CI by blanking LEXICON_TOKEN
+// and watching the build resolve and compile on GITHUB_TOKEN alone.
+//
+// LEXICON_TOKEN still wins when set, so a PAT remains supported; it is simply no longer required.
+// That matters for Dependabot, whose pull_request events receive no repository secrets.
 ThisBuild / resolvers += "GitHub Packages — the-lexicon".at(
   "https://maven.pkg.github.com/vezril/the-lexicon"
 )
