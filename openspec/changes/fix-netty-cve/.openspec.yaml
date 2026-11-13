@@ -1,0 +1,6 @@
+schema: spec-driven
+created: 2026-11-13
+# No spec delta: a transitive security bump with no change in required behaviour. The TLS and gRPC
+# requirements already in the canonical specs are unchanged — this fixes the library implementing
+# them.
+skip_specs: true
