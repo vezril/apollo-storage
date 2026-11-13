@@ -11,11 +11,20 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-# Read-only token for resolving the Lexicon gRPC artifact from GitHub Packages
-# (Maven reads need auth even for public packages; the built-in token can't read
-# another repo's package). Supply a read:packages PAT as the LEXICON_TOKEN secret.
+# Resolving the Lexicon gRPC artifact from GitHub Packages needs authentication — an anonymous
+# Maven read is a 401 even for a public package. It does NOT need a PAT: the `io.codex.lexicon-*`
+# packages are public, and the Maven endpoint wants authentication, not authorization for the
+# package's own repository, so the built-in GITHUB_TOKEN is enough. LEXICON_TOKEN still takes
+# precedence in build.sbt when present, so a PAT remains an option but is no longer a requirement.
+#
+# This matters beyond tidiness: Dependabot pull_request events receive no repository secrets, so
+# LEXICON_TOKEN is empty there and every bump PR failed to compile. They do get a GITHUB_TOKEN.
+# No `permissions:` block here on purpose: the default grant already includes `packages: read`
+# (confirmed in a run's GITHUB_TOKEN permissions listing), and adding a block would *restrict*
+# every job to exactly what it lists — which risks breaking gitleaks for no gain.
 env:
   LEXICON_TOKEN: ${{ secrets.LEXICON_TOKEN }}
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 jobs:
   # Formatting is a separate job so a scalafmt violation fails independently of

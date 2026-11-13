@@ -39,9 +39,14 @@ ThisBuild / semanticdbVersion := scalafixSemanticdb.revision
 
 // The Apollo gRPC contract is generated from the Lexicon, not a local .proto
 // (design adopt-lexicon-grpc-contracts, D46/D48). Resolve the published stubs from
-// GitHub Packages; auth with a read:packages token in LEXICON_TOKEN (or GITHUB_TOKEN),
-// supplied as a repo secret in CI. Maven reads of GitHub Packages need auth even for
-// public packages, and the built-in CI token cannot read another repo's package.
+// GitHub Packages. Maven reads of GitHub Packages need authentication even for a public package —
+// an anonymous read is a 401 — but they do NOT need a PAT: the `io.codex.lexicon-*` packages are
+// public, and the endpoint wants authentication rather than authorization for the package's own
+// repository, so the built-in GITHUB_TOKEN is sufficient. Verified in CI by blanking LEXICON_TOKEN
+// and watching the build resolve and compile on GITHUB_TOKEN alone.
+//
+// LEXICON_TOKEN still wins when set, so a PAT remains supported; it is simply no longer required.
+// That matters for Dependabot, whose pull_request events receive no repository secrets.
 ThisBuild / resolvers += "GitHub Packages — the-lexicon".at(
   "https://maven.pkg.github.com/vezril/the-lexicon"
 )
@@ -68,6 +73,37 @@ lazy val testcontainersVersion = "0.43.0"
 lazy val logbackVersion = "1.5.12"
 lazy val prometheusVersion = "0.16.0"
 
+// Netty arrives transitively (gRPC/HTTP machinery), and 4.1.112.Final carries
+// CVE-2026-75595 — a CRITICAL SNI routing bypass via a fragmented TLS ClientHello, which the
+// release Trivy scan correctly refused to publish. Apollo terminates TLS and serves gRPC, so this
+// is on a live path, not dormant.
+//
+// Overridden as a whole set, not just netty-handler: Netty does not support a mixed-version
+// classpath any more than Pekko does, and 14 artifacts resolve here. Staying on the 4.1.x line
+// (4.1.137.Final) rather than jumping to 4.2.x keeps this a patch-level change.
+lazy val nettyVersion = "4.1.137.Final"
+lazy val nettyOverrides = Seq(
+  "netty-buffer",
+  "netty-codec",
+  "netty-codec-dns",
+  "netty-codec-http",
+  "netty-codec-socks",
+  "netty-common",
+  "netty-handler",
+  "netty-handler-proxy",
+  "netty-resolver",
+  "netty-resolver-dns",
+  "netty-resolver-dns-classes-macos",
+  "netty-transport",
+  "netty-transport-classes-epoll",
+  "netty-transport-native-unix-common",
+  // The two native, classifier-carrying artifacts. They are not the vulnerable module, but they
+  // ship JNI binaries that pair with the Java classes above — epoll is the one that actually runs
+  // in the Linux image, so leaving it a minor behind the core is a real skew, not a cosmetic one.
+  "netty-transport-native-epoll",
+  "netty-resolver-dns-native-macos"
+).map(a => "io.netty" % a % nettyVersion)
+
 // Fork tests so Pekko/JVM system properties and testcontainers behave predictably.
 lazy val commonSettings = Seq(
   Test / fork := true,
@@ -83,7 +119,8 @@ lazy val commonSettings = Seq(
   // the DOCKER_API_VERSION environment variable is NOT read (measured: with the env var set the
   // client still requested /v1.32/info; with this property it requests /v1.43/info). Tests are
   // forked, so it has to be a Test/javaOption rather than an sbt JVM flag.
-  Test / javaOptions += "-Dapi.version=1.43"
+  Test / javaOptions += "-Dapi.version=1.43",
+  dependencyOverrides ++= nettyOverrides
 )
 
 lazy val root = (project in file("."))
@@ -98,6 +135,12 @@ lazy val core = (project in file("core"))
   .settings(commonSettings)
   .settings(
     name := "apollostorage-core",
+    // Measures 96.88% under CI's whole-build `coverage test coverageReport`, but only 92.97% from
+    // `core/test` alone — server tests also exercise core classes, so the number depends on how it
+    // is invoked. The floor is set below *both* so it cannot fire spuriously on whichever command
+    // someone happens to run; 95 looked right against the CI figure and broke `core/test`.
+    coverageMinimumStmtTotal := 90,
+    coverageFailOnMinimum := true,
     libraryDependencies ++= Seq(
       "org.scalatest" %% "scalatest" % scalaTestVersion % Test,
       "org.scalatestplus" %% "scalacheck-1-18" % "3.2.19.0" % Test,
@@ -112,6 +155,16 @@ lazy val server = (project in file("server"))
   .settings(commonSettings)
   .settings(
     name := "apollostorage-server",
+    // Measured 72.61% once S3BlobStoreIT was restored (it was 66.49% while that suite was parked —
+    // which is why this floor was deliberately set *after* the restoration, not before, or it would
+    // have been pinned six points low). 70 leaves room for the integration suites' run-to-run
+    // variation without being decorative.
+    //
+    // Statement only, on purpose. Branch coverage here is 56.74%, and gating two correlated metrics
+    // doubles the false-failure surface for little extra signal. Raise this as coverage improves;
+    // a floor that never moves is just a comment.
+    coverageMinimumStmtTotal := 70,
+    coverageFailOnMinimum := true,
     Compile / mainClass := Some("apollostorage.Main"),
     // The Apollo object API stubs come from the Lexicon artifact; the only .proto
     // generated locally is the standard health service (design D47). The plugin

@@ -59,4 +59,4 @@ revert. A gate nobody has seen fail is not known to be a gate.
 - [x] 6.3 AGENTS.md: dropped the "CI has no static-analysis gate" gap from §8, replaced with the two
   that remain (no coverage floor; Dependabot is actions-only), and added a "What CI gates" paragraph
   to §4 — including the `// scalafix:ok` trailing-prose trap
-- [ ] 6.4 Close PR #24 referencing this change
+- [x] 6.4 Close PR #24 referencing this change — closed with the reason recorded on it
