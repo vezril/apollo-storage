@@ -22,5 +22,5 @@
 - [x] 3.1 All 16 artifacts at `4.1.137.Final`; zero `4.1.112` references on the runtime classpath
 - [x] 3.2 Gates clean: `-Werror` compile, `scalafixAll --check`, `scalafmtCheckAll`
 - [x] 3.3 215 non-container tests green locally
-- [ ] 3.4 CI: gRPC and TLS integration suites pass against the new Netty
+- [x] 3.4 CI: gRPC and TLS integration suites pass against the new Netty — green on #50
 - [ ] 3.5 Release: the Trivy scan comes back clean and the image publishes

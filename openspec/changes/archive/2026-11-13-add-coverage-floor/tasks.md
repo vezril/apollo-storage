@@ -21,4 +21,5 @@
 - [x] 3.1 The gate genuinely fails: the 95 floor produced
   `Coverage is below minimum [92.97% < 95.00%]` and a non-zero exit
 - [x] 3.2 The chosen floor passes in isolation: `core/test core/coverageReport` → exit 0 at 92.97%
-- [ ] 3.3 CI: the whole-build run passes both floors (core 96.88% ≥ 90, server 72.61% ≥ 70)
+- [x] 3.3 CI: the whole-build run passes both floors — core **96.88% ≥ 90**, server
+  **72.61% ≥ 70**, verified in the run log rather than assumed
