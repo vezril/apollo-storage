@@ -23,9 +23,7 @@ concurrency:
 # (confirmed in a run's GITHUB_TOKEN permissions listing), and adding a block would *restrict*
 # every job to exactly what it lists — which risks breaking gitleaks for no gain.
 env:
-  # TEMPORARY, THIS COMMIT ONLY: blanked to force build.sbt's fallback (it filters empty values),
-  # so this run proves GITHUB_TOKEN alone resolves the Lexicon artifact. Restored before merge.
-  LEXICON_TOKEN: ""
+  LEXICON_TOKEN: ${{ secrets.LEXICON_TOKEN }}
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 jobs:
