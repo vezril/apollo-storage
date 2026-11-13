@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-11-13
+# No spec delta: this restores coverage for behaviour the canonical specs already require. The
+# S3 backend requirements did not change — the suite verifying them had been parked.
+skip_specs: true
