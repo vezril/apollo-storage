@@ -1,0 +1,6 @@
+schema: spec-driven
+created: 2026-11-13
+# The static-analysis spec already allows this: "A coverage floor (coverageMinimumStmtTotal) MAY be
+# enforced once the suite is mature; until then coverage is reported, not gated." This exercises
+# that MAY rather than changing it, so there is no delta.
+skip_specs: true
